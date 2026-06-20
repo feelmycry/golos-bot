@@ -1,0 +1,29 @@
+import asyncio
+import logging
+
+from aiogram import Bot, Dispatcher
+from aiogram.fsm.storage.memory import MemoryStorage
+
+from config import TELEGRAM_TOKEN
+from handlers import start, setup, dialog
+from services.db import init_db
+
+logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
+
+
+async def main():
+    await init_db()
+
+    bot = Bot(token=TELEGRAM_TOKEN)
+    dp = Dispatcher(storage=MemoryStorage())
+
+    dp.include_router(start.router)
+    dp.include_router(setup.router)
+    dp.include_router(dialog.router)
+
+    logging.info("Bot started")
+    await dp.start_polling(bot, allowed_updates=["message", "callback_query"])
+
+
+if __name__ == "__main__":
+    asyncio.run(main())
