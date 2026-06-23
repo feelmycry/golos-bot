@@ -5,7 +5,7 @@ from aiogram import Bot, Dispatcher
 from aiogram.fsm.storage.memory import MemoryStorage
 
 from config import TELEGRAM_TOKEN
-from handlers import start, setup, dialog
+from handlers import start, setup, dialog, news_analysis
 from services.db import init_db
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
@@ -20,6 +20,7 @@ async def main():
     dp.include_router(start.router)
     dp.include_router(setup.router)
     dp.include_router(dialog.router)
+    dp.include_router(news_analysis.router)
 
     logging.info("Bot started")
     await dp.start_polling(bot, allowed_updates=["message", "callback_query"])

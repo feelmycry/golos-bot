@@ -28,6 +28,7 @@ _STAGE_LABELS = {
 def _main_kb():
     b = InlineKeyboardBuilder()
     b.button(text="🎯 Начать тренировку", callback_data="start_training")
+    b.button(text="📰 Анализ новостей", callback_data="news:menu")
     b.button(text="📊 Моя статистика", callback_data="show_stats")
     b.adjust(1)
     return b.as_markup()
@@ -40,7 +41,8 @@ async def cmd_start(message: Message, state: FSMContext):
     name = message.from_user.first_name or "Коллега"
     await message.answer(
         f"Привет, {name}! 👋\n\n"
-        f"Я — тренажёр по продажам инвестиционных продуктов <b>Альфа-Банка</b>.\n\n"
+        f"Я — тренажёр по продажам инвестиционных продуктов <b>Альфа-Банка</b> "
+        f"и помощник по анализу новостей на инвестиционные продукты.\n\n"
         f"Помогу отработать навыки продаж:\n"
         f"• НСЖ — Альфа-Страхование жизни\n"
         f"• ПДС — Альфа НПФ\n"
