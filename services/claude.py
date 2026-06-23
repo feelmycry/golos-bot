@@ -91,3 +91,14 @@ async def get_session_summary(
         messages=[{"role": "user", "content": prompt}],
     )
     return response.content[0].text.strip()
+
+
+async def analyze_news_impact(news_text: str, product_id: str) -> str:
+    from prompts.news_prompts import build_news_analysis_prompt
+    prompt = build_news_analysis_prompt(news_text, product_id)
+    response = await _get_client().messages.create(
+        model="claude-sonnet-4-6",
+        max_tokens=400,
+        messages=[{"role": "user", "content": prompt}],
+    )
+    return response.content[0].text.strip()
