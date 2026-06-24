@@ -6,6 +6,7 @@ from aiogram.fsm.storage.memory import MemoryStorage
 
 from config import TELEGRAM_TOKEN
 from handlers import start, setup, dialog, news_analysis, briefing, admin, stocks
+from middlewares.block import BlockMiddleware
 from services.db import init_db
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
@@ -16,6 +17,8 @@ async def main():
 
     bot = Bot(token=TELEGRAM_TOKEN)
     dp = Dispatcher(storage=MemoryStorage())
+    dp.message.middleware(BlockMiddleware())
+    dp.callback_query.middleware(BlockMiddleware())
 
     dp.include_router(start.router)
     dp.include_router(setup.router)

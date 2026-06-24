@@ -8,7 +8,7 @@ from aiogram.types import BufferedInputFile, CallbackQuery, InlineKeyboardButton
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 
 from config import ADMIN_IDS
-from services.db import get_admin_stats, get_all_sessions_export, get_user_sessions
+from services.db import get_admin_stats, get_all_sessions_export, get_user_sessions, set_user_blocked
 
 router = Router()
 
@@ -33,7 +33,8 @@ def _users_kb(users: list) -> InlineKeyboardBuilder:
     for u in users:
         name = u["first_name"] or "—"
         uname = f" (@{u['username']})" if u["username"] else ""
-        label = f"👤 {name}{uname}"
+        blocked_icon = "🚫 " if u.get("is_blocked") else "👤 "
+        label = f"{blocked_icon}{name}{uname}"
         kb.row(InlineKeyboardButton(text=label, callback_data=f"admin:user:{u['telegram_id']}"))
     kb.row(InlineKeyboardButton(text="📥 Выгрузить CSV", callback_data="admin:export_csv"))
     return kb
@@ -149,7 +150,21 @@ async def admin_user_detail(callback: CallbackQuery):
             f"{i}. {status} {started} | {stage} | {product} | {cohort} | {msgs} сообщ{dur_str}"
         )
 
+    # Determine current block status from sessions query (first row has user data)
+    from services.db import is_user_blocked
+    blocked = await is_user_blocked(user_id)
+
     kb = InlineKeyboardBuilder()
+    if blocked:
+        kb.row(InlineKeyboardButton(
+            text="✅ Разблокировать",
+            callback_data=f"admin:unblock:{user_id}",
+        ))
+    else:
+        kb.row(InlineKeyboardButton(
+            text="🚫 Заблокировать",
+            callback_data=f"admin:block:{user_id}",
+        ))
     kb.row(InlineKeyboardButton(text="← Назад к статистике", callback_data="admin:back"))
 
     await callback.answer()
@@ -186,3 +201,28 @@ async def admin_export_csv(callback: CallbackQuery):
     filename = f"bot_stats_{datetime.now().strftime('%Y%m%d_%H%M')}.csv"
     file = BufferedInputFile(buf.getvalue().encode("utf-8-sig"), filename=filename)
     await callback.message.answer_document(file, caption=f"📊 Экспорт данных — {len(rows)} сессий")
+
+
+@router.callback_query(F.data.startswith("admin:block:"))
+async def admin_block_user(callback: CallbackQuery):
+    if callback.from_user.id not in ADMIN_IDS:
+        await callback.answer()
+        return
+    user_id = int(callback.data[len("admin:block:"):])
+    await set_user_blocked(user_id, True)
+    await callback.answer("🚫 Пользователь заблокирован", show_alert=True)
+    # Refresh the user detail view
+    callback.data = f"admin:user:{user_id}"
+    await admin_user_detail(callback)
+
+
+@router.callback_query(F.data.startswith("admin:unblock:"))
+async def admin_unblock_user(callback: CallbackQuery):
+    if callback.from_user.id not in ADMIN_IDS:
+        await callback.answer()
+        return
+    user_id = int(callback.data[len("admin:unblock:"):])
+    await set_user_blocked(user_id, False)
+    await callback.answer("✅ Пользователь разблокирован", show_alert=True)
+    callback.data = f"admin:user:{user_id}"
+    await admin_user_detail(callback)

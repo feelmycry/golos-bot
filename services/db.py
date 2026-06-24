@@ -11,9 +11,15 @@ async def init_db() -> None:
                 telegram_id INTEGER PRIMARY KEY,
                 username    TEXT,
                 first_name  TEXT,
-                created_at  TEXT DEFAULT CURRENT_TIMESTAMP
+                created_at  TEXT DEFAULT CURRENT_TIMESTAMP,
+                is_blocked  INTEGER DEFAULT 0
             )
         """)
+        # Migrate existing DB: add is_blocked if column missing
+        try:
+            await db.execute("ALTER TABLE users ADD COLUMN is_blocked INTEGER DEFAULT 0")
+        except Exception:
+            pass  # Column already exists
         await db.execute("""
             CREATE TABLE IF NOT EXISTS sessions (
                 id             INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -92,6 +98,7 @@ async def get_admin_stats() -> dict:
         # Users list with session counts
         cur = await db.execute("""
             SELECT u.first_name, u.username, u.telegram_id, u.created_at,
+                   u.is_blocked,
                    COUNT(s.id) AS sessions_total,
                    SUM(s.is_complete) AS sessions_done
             FROM users u
@@ -204,6 +211,24 @@ async def get_user_sessions(telegram_id: int) -> list:
             ORDER BY s.started_at DESC
         """, (telegram_id,))
         return [dict(r) for r in await cur.fetchall()]
+
+
+async def is_user_blocked(telegram_id: int) -> bool:
+    async with aiosqlite.connect(DB_PATH) as db:
+        cur = await db.execute(
+            "SELECT is_blocked FROM users WHERE telegram_id = ?", (telegram_id,)
+        )
+        row = await cur.fetchone()
+        return bool(row and row[0])
+
+
+async def set_user_blocked(telegram_id: int, blocked: bool) -> None:
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.execute(
+            "UPDATE users SET is_blocked = ? WHERE telegram_id = ?",
+            (1 if blocked else 0, telegram_id),
+        )
+        await db.commit()
 
 
 async def get_user_stats(user_id: int) -> dict:
