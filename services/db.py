@@ -38,6 +38,17 @@ async def init_db() -> None:
                 FOREIGN KEY (user_id) REFERENCES users(telegram_id)
             )
         """)
+        await db.execute("""
+            CREATE TABLE IF NOT EXISTS learning_progress (
+                user_id      INTEGER NOT NULL,
+                lesson_id    TEXT    NOT NULL,
+                completed    INTEGER DEFAULT 0,
+                quiz_passed  INTEGER DEFAULT 0,
+                quiz_score   INTEGER DEFAULT 0,
+                completed_at TEXT,
+                PRIMARY KEY (user_id, lesson_id)
+            )
+        """)
         await db.commit()
 
 
@@ -263,3 +274,41 @@ async def get_user_stats(user_id: int) -> dict:
         "by_cohort": by_cohort,
         "by_stage": by_stage,
     }
+
+
+# ── Learning progress ─────────────────────────────────────────────────────────
+
+async def get_learning_progress(user_id: int) -> dict[str, dict]:
+    """Returns {lesson_id: {completed, quiz_passed, quiz_score}} for a user."""
+    async with aiosqlite.connect(DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        cur = await db.execute(
+            "SELECT lesson_id, completed, quiz_passed, quiz_score FROM learning_progress WHERE user_id = ?",
+            (user_id,),
+        )
+        return {r["lesson_id"]: dict(r) for r in await cur.fetchall()}
+
+
+async def mark_lesson_read(user_id: int, lesson_id: str) -> None:
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.execute(
+            """INSERT INTO learning_progress (user_id, lesson_id, completed, completed_at)
+               VALUES (?, ?, 1, ?)
+               ON CONFLICT(user_id, lesson_id) DO UPDATE SET completed=1, completed_at=excluded.completed_at""",
+            (user_id, lesson_id, datetime.now().isoformat()),
+        )
+        await db.commit()
+
+
+async def save_quiz_result(user_id: int, lesson_id: str, score: int, total: int) -> None:
+    passed = 1 if score >= (total + 1) // 2 else 0  # >=50% to pass
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.execute(
+            """INSERT INTO learning_progress (user_id, lesson_id, completed, quiz_passed, quiz_score, completed_at)
+               VALUES (?, ?, 1, ?, ?, ?)
+               ON CONFLICT(user_id, lesson_id) DO UPDATE SET
+                 completed=1, quiz_passed=excluded.quiz_passed,
+                 quiz_score=excluded.quiz_score, completed_at=excluded.completed_at""",
+            (user_id, lesson_id, passed, score, datetime.now().isoformat()),
+        )
+        await db.commit()
