@@ -54,9 +54,9 @@ def _stage_kb():
 
 def _product_kb():
     b = InlineKeyboardBuilder()
-    b.button(text="🏦 ПДС (Альфа НПФ)", callback_data="product:pds")
-    b.button(text="🛡 НСЖ (Альфа-Страхование)", callback_data="product:nsj")
-    b.button(text="📈 ОПИФ (Альфа-Капитал)", callback_data="product:opif")
+    b.button(text="🏦 ПДС", callback_data="product:pds")
+    b.button(text="🛡 НСЖ", callback_data="product:nsj")
+    b.button(text="📈 ОПИФ", callback_data="product:opif")
     b.button(text="🥇 ОМС (металлические счета)", callback_data="product:oms")
     b.button(text="⚡ Стратегия (автоследование)", callback_data="product:strategy")
     b.button(text="💼 Портфель (диверсификация)", callback_data="product:portfolio")
