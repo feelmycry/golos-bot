@@ -30,8 +30,8 @@ def _main_kb():
     b.button(text="🎯 Начать тренировку", callback_data="start_training")
     b.button(text="📰 Анализ новостей", callback_data="news:menu")
     b.button(text="🌅 Рыночный брифинг", callback_data="briefing:open")
-    b.button(text="📈 Анализ акций", callback_data="stock:start")
-    b.button(text="📊 Моя статистика", callback_data="show_stats")
+    b.button(text="📈 Анализ акций (в разработке)", callback_data="stock:start")
+    b.button(text="📚 Обучение (в разработке)", callback_data="learning:stub")
     b.adjust(1)
     return b.as_markup()
 
@@ -72,6 +72,11 @@ async def back_to_menu(callback: CallbackQuery, state: FSMContext):
         reply_markup=_main_kb(),
     )
     await callback.answer()
+
+
+@router.callback_query(F.data == "learning:stub")
+async def learning_stub(callback: CallbackQuery):
+    await callback.answer("🚧 Раздел в разработке — скоро появится!", show_alert=True)
 
 
 @router.callback_query(F.data == "show_stats")
