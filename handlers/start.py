@@ -29,6 +29,8 @@ def _main_kb():
     b = InlineKeyboardBuilder()
     b.button(text="🎯 Начать тренировку", callback_data="start_training")
     b.button(text="📰 Анализ новостей", callback_data="news:menu")
+    b.button(text="🌅 Рыночный брифинг", callback_data="briefing:open")
+    b.button(text="📈 Анализ акций", callback_data="stock:start")
     b.button(text="📊 Моя статистика", callback_data="show_stats")
     b.adjust(1)
     return b.as_markup()

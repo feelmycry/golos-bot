@@ -1,3 +1,4 @@
+import random
 from io import BytesIO
 
 from aiogram import Router, F
@@ -11,6 +12,9 @@ from services.claude import continue_dialog, get_feedback, get_session_summary
 from services.db import update_messages, complete_session
 
 router = Router()
+
+# Emojis shown between client phrases to add variety
+_REACTION_EMOJIS = ["🤔", "💭", "🙄", "😊", "😐", "🧐", "💬", "👀", "😮", "🫤"]
 
 
 def _dialog_kb():
@@ -29,6 +33,28 @@ def _after_end_kb():
     return b.as_markup()
 
 
+async def _send_client_reply(message: Message, client_reply: str, msg_count: int, photo_urls: list) -> None:
+    """Send client reply, adding a photo on every 2nd exchange."""
+    emoji = random.choice(_REACTION_EMOJIS)
+    text = f"{emoji} <b>Клиент отвечает:</b>\n\n<i>«{client_reply}»</i>\n\n🎙 Ваш следующий ответ:"
+
+    # Show photo every 2nd client response
+    if msg_count % 2 == 0 and photo_urls:
+        photo_url = photo_urls[msg_count % len(photo_urls)]
+        try:
+            await message.answer_photo(
+                photo=photo_url,
+                caption=text,
+                parse_mode="HTML",
+                reply_markup=_dialog_kb(),
+            )
+            return
+        except Exception:
+            pass  # Fall through to text-only
+
+    await message.answer(text, parse_mode="HTML", reply_markup=_dialog_kb())
+
+
 @router.message(Training.in_dialog, F.voice)
 async def handle_voice(message: Message, state: FSMContext):
     data = await state.get_data()
@@ -37,6 +63,8 @@ async def handle_voice(message: Message, state: FSMContext):
     stage: str = data["target_stage"]
     product: str | None = data.get("product")
     session_id: int = data["session_id"]
+    msg_count: int = data.get("msg_count", 0) + 1
+    photo_urls: list = data.get("photo_urls", [])
 
     status = await message.answer("🎧 Распознаю голос...")
 
@@ -44,27 +72,25 @@ async def handle_voice(message: Message, state: FSMContext):
     bio = BytesIO()
     await message.bot.download(message.voice, destination=bio)
     bio.seek(0)
-    voice_bytes = bio.read()
 
     # Transcribe
     try:
-        transcription = await transcribe_voice(voice_bytes)
+        transcription = await transcribe_voice(bio.read())
     except Exception as e:
-        await status.edit_text(f"❌ Ошибка распознавания речи: {e}\n\nПроверьте OPENAI_API_KEY в .env")
+        await status.edit_text(f"❌ Ошибка распознавания речи: {e}")
         return
 
     if not transcription:
         await status.edit_text(
-            "❌ Не удалось распознать речь. Попробуйте говорить чётче или ближе к микрофону.",
+            "❌ Не удалось распознать речь. Попробуйте говорить чётче.",
             reply_markup=_dialog_kb(),
         )
         return
 
-    # Add employee message to history
     messages.append({"role": "employee", "content": transcription})
 
-    # Get client response
     await status.edit_text("🤔 Клиент думает...")
+
     try:
         client_reply = await continue_dialog(profile, stage, messages, product)
     except Exception as e:
@@ -73,18 +99,19 @@ async def handle_voice(message: Message, state: FSMContext):
 
     messages.append({"role": "client", "content": client_reply})
 
-    # Persist
-    await state.update_data(messages=messages)
+    await state.update_data(messages=messages, msg_count=msg_count)
     await update_messages(session_id, messages)
 
     await status.delete()
+
+    # Show what employee said
     await message.answer(
-        f"📝 <b>Вы сказали:</b> <i>{transcription}</i>\n\n"
-        f"💬 <b>Клиент отвечает:</b>\n\n<i>{client_reply}</i>\n\n"
-        f"🎙 Ваш следующий ответ:",
+        f"📝 <b>Вы сказали:</b>\n<i>{transcription}</i>",
         parse_mode="HTML",
-        reply_markup=_dialog_kb(),
     )
+
+    # Show client reply (with photo every 2nd time)
+    await _send_client_reply(message, client_reply, msg_count, photo_urls)
 
 
 @router.message(Training.in_dialog, ~F.voice)

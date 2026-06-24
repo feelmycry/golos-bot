@@ -5,7 +5,7 @@ from aiogram.utils.keyboard import InlineKeyboardBuilder
 
 from states.news_analysis import NewsAnalysis
 from prompts.news_prompts import PRODUCT_NAMES
-from services.claude import analyze_news_impact
+from services.claude import analyze_news_impact, explain_news_simple
 from services.news_fetcher import fetch_news, format_news_for_prompt
 
 router = Router()
@@ -73,6 +73,7 @@ def _input_mode_kb(product_id: str):
 
 def _after_analysis_kb(product_id: str):
     b = InlineKeyboardBuilder()
+    b.button(text="🧒 Объяснить проще", callback_data=f"news:simple:{product_id}")
     b.button(text="📝 Ещё новость", callback_data=f"news:input:manual:{product_id}")
     b.button(text="◀️ К продуктам", callback_data=f"news:back:{product_id}")
     b.button(text="🏠 Главное меню", callback_data="back_to_menu")
@@ -195,6 +196,7 @@ async def news_input_auto(callback: CallbackQuery, state: FSMContext):
 
     try:
         result = await analyze_news_impact(news_text, product_id)
+        await state.update_data(last_analysis=result)
         await status.edit_text(result, parse_mode="HTML", reply_markup=_after_analysis_kb(product_id))
     except Exception as e:
         await status.edit_text(f"❌ Ошибка анализа: {e}", reply_markup=_input_mode_kb(product_id))
@@ -218,6 +220,7 @@ async def news_receive_text(message: Message, state: FSMContext):
 
     try:
         result = await analyze_news_impact(news_text, product_id)
+        await state.update_data(last_analysis=result)
         await status.edit_text(
             warning + result,
             parse_mode="HTML",
@@ -233,6 +236,28 @@ async def news_wrong_input(message: Message):
         "📝 Пожалуйста, отправьте <b>текст</b> новости.",
         parse_mode="HTML",
     )
+
+
+# ── Simple explanation handler ────────────────────────────────────────────────
+
+@router.callback_query(F.data.startswith("news:simple:"))
+async def news_explain_simple(callback: CallbackQuery, state: FSMContext):
+    product_id = callback.data[len("news:simple:"):]
+    data = await state.get_data()
+    last_analysis = data.get("last_analysis", "")
+
+    if not last_analysis:
+        await callback.answer("❌ Сначала получите анализ новости.", show_alert=True)
+        return
+
+    await callback.answer()
+    status = await callback.message.answer("🧒 Объясняю проще...")
+
+    try:
+        result = await explain_news_simple(last_analysis, product_id)
+        await status.edit_text(result, parse_mode="HTML", reply_markup=_after_analysis_kb(product_id))
+    except Exception as e:
+        await status.edit_text(f"❌ Ошибка: {e}")
 
 
 # ── Back navigation ───────────────────────────────────────────────────────────

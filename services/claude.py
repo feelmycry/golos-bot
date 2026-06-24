@@ -98,6 +98,159 @@ async def analyze_news_impact(news_text: str, product_id: str) -> str:
     prompt = build_news_analysis_prompt(news_text, product_id)
     response = await _get_client().messages.create(
         model="claude-sonnet-4-6",
+        max_tokens=900,
+        messages=[{"role": "user", "content": prompt}],
+    )
+    return response.content[0].text.strip()
+
+
+async def analyze_stock(ticker: str, company_name: str, data: dict) -> str:
+    """AI investment analysis based on collected market data."""
+    sections = []
+
+    price_info = data.get("price") or {}
+    if price_info:
+        price = price_info.get("price")
+        change = price_info.get("change_pct")
+        mcap = price_info.get("market_cap")
+        line = f"Текущая цена: {price} ₽"
+        if change is not None:
+            line += f" ({'+' if float(change) >= 0 else ''}{change}%)"
+        if mcap:
+            line += f", капитализация: {mcap:,.0f} ₽"
+        sections.append(line)
+
+    mult = data.get("multipliers") or {}
+    if mult:
+        m_lines = []
+        labels = {"p_e": "P/E", "p_s": "P/S", "ev_ebitda": "EV/EBITDA",
+                  "p_bv": "P/BV", "roe": "ROE", "debt_ebitda": "Долг/EBITDA"}
+        for k, label in labels.items():
+            if mult.get(k):
+                m_lines.append(f"{label}={mult[k]}")
+        if m_lines:
+            sections.append("Мультипликаторы: " + ", ".join(m_lines))
+
+    fin = data.get("financials") or {}
+    if fin and fin.get("years") and fin.get("metrics"):
+        years = fin["years"]
+        metrics = fin["metrics"]
+        fin_lines = [f"Годы: {', '.join(years)}"]
+        metric_labels = {"revenue": "Выручка", "ebitda": "EBITDA",
+                         "net_profit": "Чист.прибыль", "net_debt": "Чист.долг"}
+        for key, label in metric_labels.items():
+            vals = metrics.get(key, [])
+            if vals:
+                fin_lines.append(f"{label}: {', '.join(str(v or '—') for v in vals)} млрд ₽")
+        sections.append("\n".join(fin_lines))
+
+    divs_moex = data.get("dividends_moex") or []
+    if divs_moex:
+        recent = divs_moex[:5]
+        div_lines = ["История дивидендов (MOEX):"]
+        for d in recent:
+            div_lines.append(
+                f"  {d.get('registryclosedate', '?')}: {d.get('value', '?')} {d.get('currencyid', 'RUB')}"
+            )
+        sections.append("\n".join(div_lines))
+
+    dohod = data.get("dohod") or {}
+    if dohod:
+        d_lines = []
+        if dohod.get("dsi"):
+            d_lines.append(f"DSI (стабильность дивидендов): {dohod['dsi']}")
+        if dohod.get("next_amount"):
+            d_lines.append(
+                f"Прогноз дивиденда: {dohod['next_amount']} ₽"
+                + (f" | доходность {dohod['next_yield']}" if dohod.get("next_yield") else "")
+            )
+            if dohod.get("next_date"):
+                d_lines.append(f"Дата отсечки: {dohod['next_date']}")
+        if dohod.get("history"):
+            hist = dohod["history"][:3]
+            d_lines.append("История (Dohod.ru): " + "; ".join(
+                f"{h.get('period', '?')} — {h.get('amount', '?')} ({h.get('yield', '?')})"
+                for h in hist
+            ))
+        if d_lines:
+            sections.append("\n".join(d_lines))
+
+    data_block = "\n\n".join(sections) if sections else "Подробные данные временно недоступны."
+
+    prompt = (
+        f"Ты — опытный российский инвестиционный аналитик. Проведи краткий анализ акции "
+        f"{company_name} (тикер: {ticker}) на основе следующих данных:\n\n"
+        f"{data_block}\n\n"
+        f"Ответь строго в таком формате (используй HTML-теги для Telegram):\n\n"
+        f"<b>📊 Оценка по мультипликаторам</b>\n"
+        f"[2-3 предложения: дорого/дёшево относительно сектора, ключевые числа]\n\n"
+        f"<b>💸 Дивидендный профиль</b>\n"
+        f"[2-3 предложения: стабильность, доходность, прогноз]\n\n"
+        f"<b>📈 Динамика бизнеса</b>\n"
+        f"[2-3 предложения: рост выручки/прибыли, тренд]\n\n"
+        f"<b>⚠️ Ключевые риски</b>\n"
+        f"[2-3 конкретных риска для этой компании]\n\n"
+        f"<b>✅ Инвестиционный тезис</b>\n"
+        f"[1-2 предложения: покупать/держать/продавать и почему]\n\n"
+        f"Используй только предоставленные данные. Не придумывай числа. "
+        f"Если данных не хватает по какому-то разделу — честно скажи об этом."
+    )
+    response = await _get_client().messages.create(
+        model="claude-sonnet-4-6",
+        max_tokens=800,
+        messages=[{"role": "user", "content": prompt}],
+    )
+    return response.content[0].text.strip()
+
+
+async def analyze_financial_report_pdf(pdf_bytes: bytes, company_name: str, report_title: str) -> str:
+    """Analyze a financial report PDF using Claude's document API."""
+    import base64
+    pdf_b64 = base64.standard_b64encode(pdf_bytes).decode()
+    prompt = (
+        f"Ты — опытный финансовый аналитик. Проанализируй финансовую отчётность компании "
+        f"{company_name} ({report_title}).\n\n"
+        f"Ответь структурированно:\n\n"
+        f"<b>📊 Ключевые финансовые показатели</b>\n"
+        f"[Выручка, EBITDA, чистая прибыль, долг — с динамикой год к году]\n\n"
+        f"<b>💰 Рентабельность и эффективность</b>\n"
+        f"[Маржинальность, ROE, ROA, оборачиваемость]\n\n"
+        f"<b>🏦 Долговая нагрузка</b>\n"
+        f"[Долг/EBITDA, покрытие процентов, структура обязательств]\n\n"
+        f"<b>📈 Тренды и динамика</b>\n"
+        f"[Рост/падение ключевых метрик, на что обратить внимание]\n\n"
+        f"<b>⚠️ Риски из отчётности</b>\n"
+        f"[Конкретные риски, упомянутые в документе]\n\n"
+        f"<b>✅ Вывод</b>\n"
+        f"[1-2 предложения: общая оценка финансового состояния компании]\n\n"
+        f"Используй только данные из документа. Цифры приводи в рублях или валюте отчётности."
+    )
+    response = await _get_client().messages.create(
+        model="claude-sonnet-4-6",
+        max_tokens=1000,
+        messages=[{
+            "role": "user",
+            "content": [
+                {
+                    "type": "document",
+                    "source": {
+                        "type": "base64",
+                        "media_type": "application/pdf",
+                        "data": pdf_b64,
+                    },
+                },
+                {"type": "text", "text": prompt},
+            ],
+        }],
+    )
+    return response.content[0].text.strip()
+
+
+async def explain_news_simple(analysis_text: str, product_id: str) -> str:
+    from prompts.news_prompts import build_simple_explanation_prompt
+    prompt = build_simple_explanation_prompt(analysis_text, product_id)
+    response = await _get_client().messages.create(
+        model="claude-sonnet-4-6",
         max_tokens=400,
         messages=[{"role": "user", "content": prompt}],
     )

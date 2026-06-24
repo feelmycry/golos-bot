@@ -81,6 +81,131 @@ async def complete_session(session_id: int, final_feedback: str) -> None:
         await db.commit()
 
 
+async def get_admin_stats() -> dict:
+    async with aiosqlite.connect(DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+
+        # Total users
+        cur = await db.execute("SELECT COUNT(*) AS cnt FROM users")
+        total_users = (await cur.fetchone())["cnt"]
+
+        # Users list with session counts
+        cur = await db.execute("""
+            SELECT u.first_name, u.username, u.telegram_id, u.created_at,
+                   COUNT(s.id) AS sessions_total,
+                   SUM(s.is_complete) AS sessions_done
+            FROM users u
+            LEFT JOIN sessions s ON s.user_id = u.telegram_id
+            GROUP BY u.telegram_id
+            ORDER BY sessions_total DESC
+        """)
+        users = [dict(r) for r in await cur.fetchall()]
+
+        # Session totals
+        cur = await db.execute(
+            "SELECT COUNT(*) total, SUM(is_complete) done FROM sessions"
+        )
+        sess_totals = dict(await cur.fetchone())
+
+        # Avg duration of completed sessions (in minutes)
+        cur = await db.execute("""
+            SELECT AVG((julianday(completed_at) - julianday(started_at)) * 1440) AS avg_min
+            FROM sessions WHERE is_complete = 1 AND completed_at IS NOT NULL
+        """)
+        avg_dur = (await cur.fetchone())["avg_min"]
+
+        # Stage stats: sessions count, completion, avg messages
+        cur = await db.execute("""
+            SELECT stage,
+                   COUNT(*) cnt,
+                   SUM(is_complete) done,
+                   AVG(json_array_length(messages)) avg_msgs,
+                   AVG(CASE WHEN completed_at IS NOT NULL
+                       THEN (julianday(completed_at) - julianday(started_at)) * 1440
+                       ELSE NULL END) avg_min
+            FROM sessions
+            GROUP BY stage
+            ORDER BY cnt DESC
+        """)
+        by_stage = [dict(r) for r in await cur.fetchall()]
+
+        # Product stats
+        cur = await db.execute("""
+            SELECT product, COUNT(*) cnt, SUM(is_complete) done,
+                   AVG(json_array_length(messages)) avg_msgs
+            FROM sessions WHERE product IS NOT NULL
+            GROUP BY product ORDER BY cnt DESC
+        """)
+        by_product = [dict(r) for r in await cur.fetchall()]
+
+        # Cohort stats
+        cur = await db.execute("""
+            SELECT cohort, COUNT(*) cnt, SUM(is_complete) done
+            FROM sessions WHERE cohort IS NOT NULL
+            GROUP BY cohort ORDER BY cnt DESC
+        """)
+        by_cohort = [dict(r) for r in await cur.fetchall()]
+
+        # Last 5 sessions
+        cur = await db.execute("""
+            SELECT u.first_name, s.stage, s.product, s.cohort,
+                   s.started_at, s.completed_at, s.is_complete,
+                   json_array_length(s.messages) AS msg_count
+            FROM sessions s JOIN users u ON s.user_id = u.telegram_id
+            ORDER BY s.started_at DESC LIMIT 5
+        """)
+        recent = [dict(r) for r in await cur.fetchall()]
+
+    return {
+        "total_users": total_users,
+        "users": users,
+        "sess_total": sess_totals.get("total") or 0,
+        "sess_done": sess_totals.get("done") or 0,
+        "avg_duration_min": round(avg_dur, 1) if avg_dur else None,
+        "by_stage": by_stage,
+        "by_product": by_product,
+        "by_cohort": by_cohort,
+        "recent": recent,
+    }
+
+
+async def get_all_sessions_export() -> list:
+    async with aiosqlite.connect(DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        cur = await db.execute("""
+            SELECT u.telegram_id, u.first_name, u.username, u.created_at AS registered_at,
+                   s.id AS session_id, s.started_at, s.completed_at, s.is_complete,
+                   s.stage, s.product, s.cohort, s.mode, s.scenario,
+                   json_array_length(s.messages) AS msg_count,
+                   CASE WHEN s.completed_at IS NOT NULL
+                        THEN ROUND((julianday(s.completed_at) - julianday(s.started_at)) * 1440, 1)
+                        ELSE NULL END AS duration_min
+            FROM sessions s
+            JOIN users u ON s.user_id = u.telegram_id
+            ORDER BY s.started_at DESC
+        """)
+        return [dict(r) for r in await cur.fetchall()]
+
+
+async def get_user_sessions(telegram_id: int) -> list:
+    async with aiosqlite.connect(DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        cur = await db.execute("""
+            SELECT u.first_name, u.username, u.created_at,
+                   s.id, s.stage, s.product, s.cohort,
+                   s.started_at, s.completed_at, s.is_complete,
+                   json_array_length(s.messages) AS msg_count,
+                   CASE WHEN s.completed_at IS NOT NULL
+                        THEN (julianday(s.completed_at) - julianday(s.started_at)) * 1440
+                        ELSE NULL END AS duration_min
+            FROM sessions s
+            JOIN users u ON s.user_id = u.telegram_id
+            WHERE u.telegram_id = ?
+            ORDER BY s.started_at DESC
+        """, (telegram_id,))
+        return [dict(r) for r in await cur.fetchall()]
+
+
 async def get_user_stats(user_id: int) -> dict:
     async with aiosqlite.connect(DB_PATH) as db:
         db.row_factory = aiosqlite.Row

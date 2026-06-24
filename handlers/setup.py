@@ -7,8 +7,20 @@ from states.training import Training
 from services.client_gen import generate_client
 from services.claude import get_opening_message
 from services.db import upsert_user, create_session, update_messages
+from services.photos import fetch_photos
 
 router = Router()
+
+_MOOD_EMOJI = {
+    "спокоен": "😐", "спокойна": "😐",
+    "немного нервничает": "😰",
+    "доброжелателен": "🙂", "доброжелательна": "🙂",
+    "задумчив": "🤔", "задумчива": "🤔",
+    "немного торопится": "⏱",
+    "расположен к общению": "😊", "расположена к общению": "😊",
+    "устал после работы": "😓", "устала после работы": "😓",
+    "любопытен": "👀", "любопытна": "👀",
+}
 
 
 # ── Keyboards ────────────────────────────────────────────────────────────────
@@ -152,7 +164,7 @@ async def choose_cohort(callback: CallbackQuery, state: FSMContext):
     data = await state.get_data()
 
     profile = generate_client(cohort, data["scenario"])
-    await state.update_data(cohort=cohort, client_profile=profile, messages=[])
+    await state.update_data(cohort=cohort, client_profile=profile, messages=[], msg_count=0)
 
     await upsert_user(callback.from_user.id, callback.from_user.username, callback.from_user.first_name)
     session_id = await create_session(
@@ -166,31 +178,36 @@ async def choose_cohort(callback: CallbackQuery, state: FSMContext):
     )
     await state.update_data(session_id=session_id)
 
-    # Build profile card
-    products_line = f"🏦 Продукты: {profile['products']}" if profile.get("products") else ""
-    card = (
-        f"👤 <b>Карточка клиента</b>\n\n"
-        f"<b>{profile['name']}</b>, {profile['age']} лет\n"
-        f"💰 На счёте/депозите: <b>{profile['balance']:,} руб.</b>\n"
-        f"{products_line}\n\n"
-        f"<i>{profile['appearance']}</i>\n"
-        f"Настроение: {profile['mood']}\n\n"
-        f"📋 Цель визита: {profile['purpose']}"
-    ).replace(",", " ")  # thin non-breaking space for Russian number format
+    await callback.message.edit_text("⏳ Подбираю клиента и фото...")
 
-    # Properly format large numbers with spaces for Russian locale
-    formatted_balance = f"{profile['balance']:,}".replace(",", " ")
+    # Fetch photos — store URLs list for reuse in dialog
+    photo_urls = await fetch_photos(cohort, profile["gender"])
+    await state.update_data(photo_urls=photo_urls)
+
+    # Build card text
+    formatted_balance = f"{profile['balance']:,}".replace(",", " ")
+    products_line = f"🏦 <b>Продукты:</b> {profile['products']}" if profile.get("products") else "🏦 <b>Продукты:</b> нет банковских карт"
+    mood_emoji = _MOOD_EMOJI.get(profile["mood"], "😶")
+
     card = (
         f"👤 <b>Карточка клиента</b>\n\n"
         f"<b>{profile['name']}</b>, {profile['age']} лет\n"
-        f"💰 На счёте/депозите: <b>{formatted_balance} руб.</b>\n"
+        f"💰 <b>На счёте/депозите:</b> {formatted_balance} руб.\n"
         f"{products_line}\n\n"
-        f"<i>{profile['appearance']}</i>\n"
-        f"Настроение: {profile['mood']}\n\n"
-        f"📋 Цель визита: {profile['purpose']}"
+        f"👁 <i>{profile['appearance']}</i>\n"
+        f"{mood_emoji} <b>Настроение:</b> {profile['mood']}\n\n"
+        f"📋 <b>Цель визита:</b> {profile['purpose']}"
     )
 
-    await callback.message.edit_text(f"{card}\n\n⏳ Генерирую клиента...", parse_mode="HTML")
+    # Show card with photo if available
+    if photo_urls:
+        try:
+            await callback.message.answer_photo(photo=photo_urls[0], caption=card, parse_mode="HTML")
+            await callback.message.delete()
+        except Exception:
+            await callback.message.edit_text(card, parse_mode="HTML")
+    else:
+        await callback.message.edit_text(card, parse_mode="HTML")
 
     stage = data["target_stage"]
     product = data.get("product")
@@ -198,16 +215,15 @@ async def choose_cohort(callback: CallbackQuery, state: FSMContext):
     try:
         opening = await get_opening_message(profile, stage, product)
     except Exception as e:
-        await callback.message.edit_text(f"❌ Ошибка AI: {e}\n\nПроверьте ANTHROPIC_API_KEY в файле .env")
+        await callback.message.answer(f"❌ Ошибка AI: {e}")
         return
 
     messages = [{"role": "client", "content": opening}]
     await state.update_data(messages=messages)
     await update_messages(session_id, messages)
 
-    await callback.message.edit_text(card, parse_mode="HTML")
     await callback.message.answer(
-        f"💬 <b>Клиент говорит:</b>\n\n<i>{opening}</i>\n\n"
+        f"🗣 <b>Клиент говорит:</b>\n\n<i>«{opening}»</i>\n\n"
         f"🎙 Запишите голосовое сообщение с вашим ответом:",
         parse_mode="HTML",
         reply_markup=_dialog_kb(),
