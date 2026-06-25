@@ -31,7 +31,7 @@ def _main_kb():
     b.button(text="📰 Анализ новостей", callback_data="news:menu")
     b.button(text="🌅 Рыночный брифинг", callback_data="briefing:open")
     b.button(text="📈 Анализ акций (в разработке)", callback_data="stock:start")
-    b.button(text="📚 Обучение (в разработке)", callback_data="learning:menu")
+    b.button(text="📚 Обучение", callback_data="learning:menu")
     b.button(text="🎮 Игра (в разработке)", callback_data="game:open")
     b.adjust(1)
     return b.as_markup()
