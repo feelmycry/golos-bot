@@ -826,6 +826,26 @@ def _location_kb(loc_id: str, quests: list, completed: set) -> object:
     return b.as_markup()
 
 
+_NUM = ["1️⃣", "2️⃣", "3️⃣", "4️⃣"]
+
+
+def _options_text(options: list, correct: int, answered: int | None, eliminated: int | None) -> str:
+    """Renders answer options as readable text lines for the message body."""
+    lines = []
+    for i, opt in enumerate(options):
+        if answered is None:
+            prefix = "🚫" if i == eliminated else _NUM[i]
+        else:
+            if i == correct:
+                prefix = "✅"
+            elif i == answered:
+                prefix = "❌"
+            else:
+                prefix = _NUM[i]
+        lines.append(f"{prefix} {opt}")
+    return "\n".join(lines)
+
+
 def _quest_options_kb(
     loc_id: str,
     quest_id: str,
@@ -835,26 +855,16 @@ def _quest_options_kb(
     eliminated: int | None = None,
 ) -> object:
     b = InlineKeyboardBuilder()
-    for i, opt in enumerate(options):
-        if answered is None:
-            if eliminated == i:
-                label = f"🚫 {opt}"
-                cb = "game:noop"
+    if answered is None:
+        for i in range(len(options)):
+            if i == eliminated:
+                b.button(text="🚫", callback_data="game:noop")
             else:
-                label = f"{chr(0x31 + i)}️⃣ {opt}"
-                cb = f"game:answer:{loc_id}:{quest_id}:{i}"
-        else:
-            if i == correct:
-                label = f"✅ {opt}"
-            elif i == answered:
-                label = f"❌ {opt}"
-            else:
-                label = f"   {opt}"
-            cb = "game:noop"
-        b.button(text=label, callback_data=cb)
-    if answered is not None:
+                b.button(text=_NUM[i], callback_data=f"game:answer:{loc_id}:{quest_id}:{i}")
+        b.adjust(len(options))
+    else:
         b.button(text="▶️ Продолжить", callback_data=f"game:location:{loc_id}")
-    b.adjust(1)
+        b.adjust(1)
     return b.as_markup()
 
 
@@ -1040,10 +1050,12 @@ async def game_quest(callback: CallbackQuery, state: FSMContext):
     hint_line = "\n💡 <i>Подсказка применена — один неверный вариант исключён</i>" if eliminated is not None else ""
     done_line = "\n\n✅ <i>Квест пройден. Ответь ещё раз для повторения (XP не начисляется).</i>" if already_done else ""
 
+    opts = _options_text(quest["options"], quest["correct"], None, eliminated)
     text = (
         f"{loc['emoji']} <b>{loc['name']}</b> › {quest['title']}\n\n"
         f"<i>{quest['story']}</i>\n\n"
-        f"❓ <b>{quest['question']}</b>"
+        f"❓ <b>{quest['question']}</b>\n\n"
+        f"{opts}"
         f"{boost_line}{hint_line}{done_line}"
     )
 
@@ -1114,12 +1126,14 @@ async def game_answer(callback: CallbackQuery, state: FSMContext):
     if is_correct and not already_done and mult > 1.0:
         streak_bonus_text = f" (×{mult:.1f} серия)"
 
+    opts = _options_text(quest["options"], quest["correct"], answer_idx, eliminated)
+
     if is_correct:
         result_header = "✅ <b>Верно!</b>"
         reward_line = (
-            f"\n\n🎁 +{xp_gained} XP{streak_bonus_text}, +{coins_gained} ИР, +{rep_gained} реп."
+            f"\n🎁 +{xp_gained} XP{streak_bonus_text}, +{coins_gained} ИР, +{rep_gained} реп."
             if not already_done else
-            f"\n\n🔄 <i>Повтор: +{rep_gained} репутации</i>"
+            f"\n🔄 <i>Повтор: +{rep_gained} репутации</i>"
         )
     else:
         result_header = "❌ <b>Неверно.</b>"
@@ -1127,9 +1141,9 @@ async def game_answer(callback: CallbackQuery, state: FSMContext):
 
     text = (
         f"{loc['emoji']} <b>{loc['name']}</b> › {quest['title']}\n\n"
-        f"{result_header}\n\n"
+        f"{opts}\n\n"
+        f"{result_header}{reward_line}\n\n"
         f"💡 <b>Объяснение:</b>\n{quest['explanation']}"
-        f"{reward_line}"
         f"{level_up_text}\n\n"
         f"📊 Уровень {level_after} | XP {xp_in}/{xp_need}"
     )
