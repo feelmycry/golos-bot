@@ -94,6 +94,9 @@ _MOD_LABELS = {
     "m3": ("🏆", "Профессиональный уровень"),
 }
 
+# Modules locked for regular users (will become paid later)
+_LOCKED_MODS = {"m2", "m3"}
+
 # ── Menu: 3 modules ───────────────────────────────────────────────────────────
 
 @router.callback_query(F.data == "learning:menu")
@@ -104,10 +107,16 @@ async def learning_menu(callback: CallbackQuery):
 
     for mod in course["modules"]:
         icon, label = _MOD_LABELS.get(mod["id"], ("📚", mod["level"]))
-        kb.row(InlineKeyboardButton(
-            text=f"{icon} {label}",
-            callback_data=f"learn:mod:{mod['id']}",
-        ))
+        if mod["id"] in _LOCKED_MODS:
+            kb.row(InlineKeyboardButton(
+                text=f"🔒 {label} — скоро",
+                callback_data=f"learn:locked:{mod['id']}",
+            ))
+        else:
+            kb.row(InlineKeyboardButton(
+                text=f"{icon} {label}",
+                callback_data=f"learn:mod:{mod['id']}",
+            ))
     kb.row(InlineKeyboardButton(text="◀️ Главное меню", callback_data="back_to_menu"))
 
     await callback.message.edit_text(
@@ -119,12 +128,27 @@ async def learning_menu(callback: CallbackQuery):
     )
 
 
+# ── Locked module stub ───────────────────────────────────────────────────────
+
+@router.callback_query(F.data.startswith("learn:locked:"))
+async def locked_module(callback: CallbackQuery):
+    mod_id = callback.data[len("learn:locked:"):]
+    _, label = _MOD_LABELS.get(mod_id, ("", "этот уровень"))
+    await callback.answer(
+        f"🔒 {label} пока недоступен.\nСкоро здесь появится платный доступ.",
+        show_alert=True,
+    )
+
+
 # ── Lesson list for a module ──────────────────────────────────────────────────
 
 @router.callback_query(F.data.startswith("learn:mod:"))
 async def module_lessons(callback: CallbackQuery):
-    await callback.answer()
     mod_id = callback.data[len("learn:mod:"):]
+    if mod_id in _LOCKED_MODS:
+        await callback.answer("🔒 Этот уровень пока недоступен.", show_alert=True)
+        return
+    await callback.answer()
     mod = _get_module(mod_id)
     if not mod:
         await callback.answer("Модуль не найден", show_alert=True)

@@ -7,6 +7,7 @@ from aiogram.fsm.storage.memory import MemoryStorage
 from config import TELEGRAM_TOKEN
 from handlers import start, setup, dialog, news_analysis, briefing, admin, stocks, learning
 from middlewares.block import BlockMiddleware
+from middlewares.subscription import SubscriptionMiddleware
 from services.db import init_db
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
@@ -19,6 +20,8 @@ async def main():
     dp = Dispatcher(storage=MemoryStorage())
     dp.message.middleware(BlockMiddleware())
     dp.callback_query.middleware(BlockMiddleware())
+    dp.message.middleware(SubscriptionMiddleware())
+    dp.callback_query.middleware(SubscriptionMiddleware())
 
     dp.include_router(start.router)
     dp.include_router(setup.router)

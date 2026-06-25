@@ -164,13 +164,13 @@ async def get_admin_stats() -> dict:
         """)
         by_cohort = [dict(r) for r in await cur.fetchall()]
 
-        # Last 5 sessions
+        # Last 50 sessions
         cur = await db.execute("""
             SELECT u.first_name, s.stage, s.product, s.cohort,
                    s.started_at, s.completed_at, s.is_complete,
                    json_array_length(s.messages) AS msg_count
             FROM sessions s JOIN users u ON s.user_id = u.telegram_id
-            ORDER BY s.started_at DESC LIMIT 5
+            ORDER BY s.started_at DESC LIMIT 50
         """)
         recent = [dict(r) for r in await cur.fetchall()]
 

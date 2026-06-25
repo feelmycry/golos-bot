@@ -73,6 +73,22 @@ async def back_to_menu(callback: CallbackQuery, state: FSMContext):
     await callback.answer()
 
 
+@router.callback_query(F.data == "check_sub")
+async def check_subscription(callback: CallbackQuery, state: FSMContext):
+    await state.clear()
+    name = callback.from_user.first_name or "Коллега"
+    await callback.message.edit_text(
+        f"✅ Подписка подтверждена! Добро пожаловать, {name}!\n\n"
+        f"Это тренажёр по продажам инвестиционных продуктов и помощник по анализу новостей.\n\n"
+        f"Помогу отработать навыки продаж по:\n"
+        f"• НСЖ\n• ПДС\n• ОПИФ\n• ОМС\n• Стратегии автоследования\n\n"
+        f"Отвечай <b>голосовыми сообщениями</b> — я распознаю, проанализирую и отвечу как настоящий клиент.",
+        parse_mode="HTML",
+        reply_markup=_main_kb(),
+    )
+    await callback.answer("✅ Добро пожаловать!")
+
+
 @router.callback_query(F.data == "learning:stub")
 async def learning_stub(callback: CallbackQuery):
     await callback.answer("🚧 Раздел в разработке — скоро появится!", show_alert=True)

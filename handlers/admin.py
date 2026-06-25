@@ -4,11 +4,17 @@ from datetime import datetime
 
 from aiogram import F, Router
 from aiogram.filters import Command
+from aiogram.fsm.context import FSMContext
+from aiogram.fsm.state import State, StatesGroup
 from aiogram.types import BufferedInputFile, CallbackQuery, InlineKeyboardButton, Message
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 
 from config import ADMIN_IDS
 from services.db import get_admin_stats, get_all_sessions_export, get_user_sessions, set_user_blocked
+
+
+class AdminMsg(StatesGroup):
+    waiting_text = State()
 
 router = Router()
 
@@ -86,7 +92,7 @@ async def _send_admin_summary(target):
             lines.append(f"  • {label}: {r['cnt']} сессий, завершено {done}")
 
     if st["recent"]:
-        lines.append("\n🕐 <b>Последние 5 сессий:</b>")
+        lines.append("\n🕐 <b>Последние 50 сессий:</b>")
         for r in st["recent"]:
             stage = _STAGE_LABELS.get(r["stage"], r["stage"])
             status = "✅" if r["is_complete"] else "🔄"
@@ -155,6 +161,10 @@ async def admin_user_detail(callback: CallbackQuery):
     blocked = await is_user_blocked(user_id)
 
     kb = InlineKeyboardBuilder()
+    kb.row(InlineKeyboardButton(
+        text="✉️ Написать в ЛС",
+        callback_data=f"admin:msg:{user_id}",
+    ))
     if blocked:
         kb.row(InlineKeyboardButton(
             text="✅ Разблокировать",
@@ -168,7 +178,17 @@ async def admin_user_detail(callback: CallbackQuery):
     kb.row(InlineKeyboardButton(text="← Назад к статистике", callback_data="admin:back"))
 
     await callback.answer()
-    await callback.message.edit_text("\n".join(lines), parse_mode="HTML", reply_markup=kb.as_markup())
+    full_text = "\n".join(lines)
+    # Telegram message limit is 4096 chars; split if needed
+    if len(full_text) <= 4096:
+        await callback.message.edit_text(full_text, parse_mode="HTML", reply_markup=kb.as_markup())
+    else:
+        # Send first chunk as edit (no keyboard), rest as new messages, last gets keyboard
+        chunks = [full_text[i:i+4000] for i in range(0, len(full_text), 4000)]
+        await callback.message.edit_text(chunks[0], parse_mode="HTML")
+        for chunk in chunks[1:-1]:
+            await callback.message.answer(chunk, parse_mode="HTML")
+        await callback.message.answer(chunks[-1], parse_mode="HTML", reply_markup=kb.as_markup())
 
 
 @router.callback_query(F.data == "admin:back")
@@ -226,3 +246,52 @@ async def admin_unblock_user(callback: CallbackQuery):
     await callback.answer("✅ Пользователь разблокирован", show_alert=True)
     callback.data = f"admin:user:{user_id}"
     await admin_user_detail(callback)
+
+
+@router.callback_query(F.data.startswith("admin:msg:"))
+async def admin_msg_start(callback: CallbackQuery, state: FSMContext):
+    if callback.from_user.id not in ADMIN_IDS:
+        await callback.answer()
+        return
+
+    user_id = int(callback.data[len("admin:msg:"):])
+    await state.set_state(AdminMsg.waiting_text)
+    await state.update_data(target_user_id=user_id)
+
+    kb = InlineKeyboardBuilder()
+    kb.row(InlineKeyboardButton(text="❌ Отмена", callback_data=f"admin:msg_cancel:{user_id}"))
+
+    await callback.answer()
+    await callback.message.edit_text(
+        f"✉️ Введите текст сообщения для пользователя <code>{user_id}</code>.\n\n"
+        "Сообщение будет отправлено от имени бота:",
+        parse_mode="HTML",
+        reply_markup=kb.as_markup(),
+    )
+
+
+@router.callback_query(F.data.startswith("admin:msg_cancel:"))
+async def admin_msg_cancel(callback: CallbackQuery, state: FSMContext):
+    if callback.from_user.id not in ADMIN_IDS:
+        await callback.answer()
+        return
+    await state.clear()
+    user_id = int(callback.data[len("admin:msg_cancel:"):])
+    await callback.answer("Отменено")
+    callback.data = f"admin:user:{user_id}"
+    await admin_user_detail(callback)
+
+
+@router.message(AdminMsg.waiting_text)
+async def admin_msg_send(message: Message, state: FSMContext):
+    if message.from_user.id not in ADMIN_IDS:
+        return
+    data = await state.get_data()
+    target_user_id = data.get("target_user_id")
+    await state.clear()
+
+    try:
+        await message.bot.send_message(target_user_id, message.text)
+        await message.answer(f"✅ Сообщение отправлено пользователю <code>{target_user_id}</code>.", parse_mode="HTML")
+    except Exception as e:
+        await message.answer(f"❌ Не удалось отправить: <code>{e}</code>", parse_mode="HTML")
