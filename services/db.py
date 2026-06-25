@@ -1,6 +1,6 @@
 import json
 import aiosqlite
-from datetime import datetime
+from datetime import datetime, date
 from config import DB_PATH
 
 
@@ -47,6 +47,37 @@ async def init_db() -> None:
                 quiz_score   INTEGER DEFAULT 0,
                 completed_at TEXT,
                 PRIMARY KEY (user_id, lesson_id)
+            )
+        """)
+        # ── Game tables ───────────────────────────────────────────────────────
+        await db.execute("""
+            CREATE TABLE IF NOT EXISTS game_players (
+                user_id     INTEGER PRIMARY KEY,
+                level       INTEGER DEFAULT 1,
+                xp          INTEGER DEFAULT 0,
+                coins       INTEGER DEFAULT 0,
+                streak_days INTEGER DEFAULT 0,
+                last_active TEXT,
+                created_at  TEXT DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+        await db.execute("""
+            CREATE TABLE IF NOT EXISTS game_location_progress (
+                user_id       INTEGER NOT NULL,
+                location_id   TEXT    NOT NULL,
+                reputation    INTEGER DEFAULT 0,
+                shares        INTEGER DEFAULT 0,
+                last_collected TEXT,
+                PRIMARY KEY (user_id, location_id)
+            )
+        """)
+        await db.execute("""
+            CREATE TABLE IF NOT EXISTS game_quest_log (
+                user_id      INTEGER NOT NULL,
+                quest_id     TEXT    NOT NULL,
+                location_id  TEXT    NOT NULL,
+                completed_at TEXT,
+                PRIMARY KEY (user_id, quest_id)
             )
         """)
         await db.commit()
@@ -310,5 +341,134 @@ async def save_quiz_result(user_id: int, lesson_id: str, score: int, total: int)
                  completed=1, quiz_passed=excluded.quiz_passed,
                  quiz_score=excluded.quiz_score, completed_at=excluded.completed_at""",
             (user_id, lesson_id, passed, score, datetime.now().isoformat()),
+        )
+        await db.commit()
+
+
+# ── Game functions ────────────────────────────────────────────────────────────
+
+async def game_get_or_create_player(user_id: int) -> dict:
+    async with aiosqlite.connect(DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        await db.execute(
+            "INSERT OR IGNORE INTO game_players (user_id) VALUES (?)",
+            (user_id,),
+        )
+        await db.commit()
+        cur = await db.execute(
+            "SELECT user_id, xp, coins, streak_days, last_active FROM game_players WHERE user_id = ?",
+            (user_id,),
+        )
+        return dict(await cur.fetchone())
+
+
+async def game_update_streak(user_id: int) -> int:
+    """Update streak counter. Returns new streak value."""
+    today = date.today().isoformat()
+    async with aiosqlite.connect(DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        cur = await db.execute(
+            "SELECT streak_days, last_active FROM game_players WHERE user_id = ?",
+            (user_id,),
+        )
+        row = await cur.fetchone()
+        if not row:
+            return 0
+
+        last_active = row["last_active"]
+        streak = row["streak_days"]
+
+        if last_active == today:
+            return streak  # Already updated today
+
+        from datetime import timedelta
+        yesterday = (date.today() - timedelta(days=1)).isoformat()
+        if last_active == yesterday:
+            streak += 1
+        else:
+            streak = 1
+
+        await db.execute(
+            "UPDATE game_players SET streak_days = ?, last_active = ? WHERE user_id = ?",
+            (streak, today, user_id),
+        )
+        await db.commit()
+        return streak
+
+
+async def game_get_location_progress(user_id: int) -> dict[str, dict]:
+    """Returns {location_id: {reputation, shares, last_collected}}."""
+    async with aiosqlite.connect(DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        cur = await db.execute(
+            "SELECT location_id, reputation, shares, last_collected FROM game_location_progress WHERE user_id = ?",
+            (user_id,),
+        )
+        return {r["location_id"]: dict(r) for r in await cur.fetchall()}
+
+
+async def game_get_completed_quests(user_id: int) -> set[str]:
+    async with aiosqlite.connect(DB_PATH) as db:
+        cur = await db.execute(
+            "SELECT quest_id FROM game_quest_log WHERE user_id = ?",
+            (user_id,),
+        )
+        return {r[0] for r in await cur.fetchall()}
+
+
+async def game_save_quest_result(
+    user_id: int,
+    quest_id: str,
+    location_id: str,
+    xp: int,
+    coins: int,
+    rep: int,
+) -> None:
+    now = datetime.utcnow().isoformat()
+    async with aiosqlite.connect(DB_PATH) as db:
+        # Log the quest
+        await db.execute(
+            """INSERT OR REPLACE INTO game_quest_log (user_id, quest_id, location_id, completed_at)
+               VALUES (?, ?, ?, ?)""",
+            (user_id, quest_id, location_id, now),
+        )
+        # Update player XP and coins
+        if xp > 0 or coins > 0:
+            await db.execute(
+                "UPDATE game_players SET xp = xp + ?, coins = coins + ? WHERE user_id = ?",
+                (xp, coins, user_id),
+            )
+        # Update location reputation and shares (1 share per quest completed with correct answer)
+        if rep > 0:
+            await db.execute(
+                """INSERT INTO game_location_progress (user_id, location_id, reputation, shares, last_collected)
+                   VALUES (?, ?, ?, 1, ?)
+                   ON CONFLICT(user_id, location_id) DO UPDATE SET
+                     reputation = reputation + ?,
+                     shares = shares + 1""",
+                (user_id, location_id, rep, now, rep),
+            )
+        await db.commit()
+
+
+async def game_update_player(user_id: int, xp: int = 0, coins: int = 0) -> None:
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.execute(
+            "UPDATE game_players SET xp = xp + ?, coins = coins + ? WHERE user_id = ?",
+            (xp, coins, user_id),
+        )
+        await db.commit()
+
+
+async def game_collect_income(user_id: int, location_id: str, amount: int) -> None:
+    now = datetime.utcnow().isoformat()
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.execute(
+            "UPDATE game_players SET coins = coins + ? WHERE user_id = ?",
+            (amount, user_id),
+        )
+        await db.execute(
+            "UPDATE game_location_progress SET last_collected = ? WHERE user_id = ? AND location_id = ?",
+            (now, user_id, location_id),
         )
         await db.commit()
