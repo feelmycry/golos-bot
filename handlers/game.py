@@ -4,6 +4,7 @@
 """
 from __future__ import annotations
 
+import html
 import hashlib
 import math
 from datetime import datetime, date, timedelta
@@ -842,7 +843,7 @@ def _options_text(options: list, correct: int, answered: int | None, eliminated:
                 prefix = "❌"
             else:
                 prefix = _NUM[i]
-        lines.append(f"{prefix} {opt}")
+        lines.append(f"{prefix} {html.escape(opt)}")
     return "\n".join(lines)
 
 
@@ -1052,9 +1053,9 @@ async def game_quest(callback: CallbackQuery, state: FSMContext):
 
     opts = _options_text(quest["options"], quest["correct"], None, eliminated)
     text = (
-        f"{loc['emoji']} <b>{loc['name']}</b> › {quest['title']}\n\n"
-        f"<i>{quest['story']}</i>\n\n"
-        f"❓ <b>{quest['question']}</b>\n\n"
+        f"{loc['emoji']} <b>{loc['name']}</b> › {html.escape(quest['title'])}\n\n"
+        f"<i>{html.escape(quest['story'])}</i>\n\n"
+        f"❓ <b>{html.escape(quest['question'])}</b>\n\n"
         f"{opts}"
         f"{boost_line}{hint_line}{done_line}"
     )
@@ -1140,10 +1141,10 @@ async def game_answer(callback: CallbackQuery, state: FSMContext):
         reward_line = ""
 
     text = (
-        f"{loc['emoji']} <b>{loc['name']}</b> › {quest['title']}\n\n"
+        f"{loc['emoji']} <b>{loc['name']}</b> › {html.escape(quest['title'])}\n\n"
         f"{opts}\n\n"
         f"{result_header}{reward_line}\n\n"
-        f"💡 <b>Объяснение:</b>\n{quest['explanation']}"
+        f"💡 <b>Объяснение:</b>\n{html.escape(quest['explanation'])}"
         f"{level_up_text}\n\n"
         f"📊 Уровень {level_after} | XP {xp_in}/{xp_need}"
     )
