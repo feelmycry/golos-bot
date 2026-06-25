@@ -80,6 +80,11 @@ async def init_db() -> None:
                 PRIMARY KEY (user_id, quest_id)
             )
         """)
+        for col in ("hint_charges INTEGER DEFAULT 0", "xp_boost_charges INTEGER DEFAULT 0"):
+            try:
+                await db.execute(f"ALTER TABLE game_players ADD COLUMN {col}")
+            except Exception:
+                pass
         await db.commit()
 
 
@@ -356,7 +361,7 @@ async def game_get_or_create_player(user_id: int) -> dict:
         )
         await db.commit()
         cur = await db.execute(
-            "SELECT user_id, xp, coins, streak_days, last_active FROM game_players WHERE user_id = ?",
+            "SELECT user_id, xp, coins, streak_days, last_active, hint_charges, xp_boost_charges FROM game_players WHERE user_id = ?",
             (user_id,),
         )
         return dict(await cur.fetchone())
@@ -472,3 +477,93 @@ async def game_collect_income(user_id: int, location_id: str, amount: int) -> No
             (now, user_id, location_id),
         )
         await db.commit()
+
+
+async def game_spend_coins(user_id: int, amount: int) -> bool:
+    async with aiosqlite.connect(DB_PATH) as db:
+        cur = await db.execute("SELECT coins FROM game_players WHERE user_id = ?", (user_id,))
+        row = await cur.fetchone()
+        if not row or row[0] < amount:
+            return False
+        await db.execute("UPDATE game_players SET coins = coins - ? WHERE user_id = ?", (amount, user_id))
+        await db.commit()
+        return True
+
+
+async def game_buy_shares(user_id: int, location_id: str, qty: int, cost: int) -> bool:
+    async with aiosqlite.connect(DB_PATH) as db:
+        cur = await db.execute("SELECT coins FROM game_players WHERE user_id = ?", (user_id,))
+        row = await cur.fetchone()
+        if not row or row[0] < cost:
+            return False
+        now = datetime.utcnow().isoformat()
+        await db.execute("UPDATE game_players SET coins = coins - ? WHERE user_id = ?", (cost, user_id))
+        await db.execute(
+            """INSERT INTO game_location_progress (user_id, location_id, reputation, shares, last_collected)
+               VALUES (?, ?, 0, ?, ?)
+               ON CONFLICT(user_id, location_id) DO UPDATE SET shares = shares + ?""",
+            (user_id, location_id, qty, now, qty),
+        )
+        await db.commit()
+        return True
+
+
+async def game_sell_shares(user_id: int, location_id: str, qty: int, gain: int) -> bool:
+    async with aiosqlite.connect(DB_PATH) as db:
+        cur = await db.execute(
+            "SELECT shares FROM game_location_progress WHERE user_id = ? AND location_id = ?",
+            (user_id, location_id),
+        )
+        row = await cur.fetchone()
+        if not row or row[0] < qty:
+            return False
+        await db.execute("UPDATE game_players SET coins = coins + ? WHERE user_id = ?", (gain, user_id))
+        await db.execute(
+            "UPDATE game_location_progress SET shares = shares - ? WHERE user_id = ? AND location_id = ?",
+            (qty, user_id, location_id),
+        )
+        await db.commit()
+        return True
+
+
+async def game_use_hint(user_id: int) -> bool:
+    async with aiosqlite.connect(DB_PATH) as db:
+        cur = await db.execute("SELECT hint_charges FROM game_players WHERE user_id = ?", (user_id,))
+        row = await cur.fetchone()
+        if not row or row[0] < 1:
+            return False
+        await db.execute(
+            "UPDATE game_players SET hint_charges = hint_charges - 1 WHERE user_id = ?", (user_id,)
+        )
+        await db.commit()
+        return True
+
+
+async def game_use_xp_boost(user_id: int) -> bool:
+    async with aiosqlite.connect(DB_PATH) as db:
+        cur = await db.execute("SELECT xp_boost_charges FROM game_players WHERE user_id = ?", (user_id,))
+        row = await cur.fetchone()
+        if not row or row[0] < 1:
+            return False
+        await db.execute(
+            "UPDATE game_players SET xp_boost_charges = xp_boost_charges - 1 WHERE user_id = ?", (user_id,)
+        )
+        await db.commit()
+        return True
+
+
+async def game_add_shop_item(user_id: int, item: str, cost: int) -> bool:
+    col = {"hint": "hint_charges", "xp_boost": "xp_boost_charges"}.get(item)
+    if not col:
+        return False
+    async with aiosqlite.connect(DB_PATH) as db:
+        cur = await db.execute("SELECT coins FROM game_players WHERE user_id = ?", (user_id,))
+        row = await cur.fetchone()
+        if not row or row[0] < cost:
+            return False
+        await db.execute(
+            f"UPDATE game_players SET coins = coins - ?, {col} = {col} + 1 WHERE user_id = ?",
+            (cost, user_id),
+        )
+        await db.commit()
+        return True
