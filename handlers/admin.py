@@ -106,10 +106,30 @@ async def _send_admin_summary(target):
     kb = _users_kb(st["users"])
 
     text = "\n".join(lines)
-    if isinstance(target, Message):
-        await target.answer(text, parse_mode="HTML", reply_markup=kb.as_markup())
-    else:
-        await target.message.edit_text(text, parse_mode="HTML", reply_markup=kb.as_markup())
+    try:
+        if isinstance(target, Message):
+            if len(text) <= 4096:
+                await target.answer(text, parse_mode="HTML", reply_markup=kb.as_markup())
+            else:
+                chunks = [text[i:i+4000] for i in range(0, len(text), 4000)]
+                for chunk in chunks[:-1]:
+                    await target.answer(chunk, parse_mode="HTML")
+                await target.answer(chunks[-1], parse_mode="HTML", reply_markup=kb.as_markup())
+        else:
+            if len(text) <= 4096:
+                await target.message.edit_text(text, parse_mode="HTML", reply_markup=kb.as_markup())
+            else:
+                chunks = [text[i:i+4000] for i in range(0, len(text), 4000)]
+                await target.message.edit_text(chunks[0], parse_mode="HTML")
+                for chunk in chunks[1:-1]:
+                    await target.message.answer(chunk, parse_mode="HTML")
+                await target.message.answer(chunks[-1], parse_mode="HTML", reply_markup=kb.as_markup())
+    except Exception as e:
+        err = f"❌ Ошибка при отображении статистики: {e}"
+        if isinstance(target, Message):
+            await target.answer(err)
+        else:
+            await target.message.answer(err)
 
 
 @router.callback_query(F.data.startswith("admin:user:"))
