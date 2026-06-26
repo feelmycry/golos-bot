@@ -179,3 +179,21 @@ async def handle_end(callback: CallbackQuery, state: FSMContext):
         await state.clear()
     except Exception as e:
         await summary_msg.edit_text(f"❌ Ошибка при формировании итогов: {e}")
+
+
+@router.callback_query(F.data == "dialog:end")
+async def handle_end_stale(callback: CallbackQuery, state: FSMContext):
+    """Fallback: кнопка «Завершить» нажата, но state устарел (перезапуск бота)."""
+    await state.clear()
+    await callback.answer("Сессия устарела после перезапуска бота.", show_alert=True)
+    await callback.message.answer(
+        "⚠️ Сессия была прервана перезапуском бота.\n\n"
+        "Нажми /start чтобы начать заново.",
+    )
+
+
+@router.callback_query(F.data == "dialog:hint")
+async def handle_hint_stale(callback: CallbackQuery, state: FSMContext):
+    """Fallback: кнопка «Подсказка» нажата после перезапуска."""
+    await state.clear()
+    await callback.answer("Сессия устарела после перезапуска бота.", show_alert=True)

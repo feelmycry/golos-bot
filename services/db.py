@@ -976,7 +976,10 @@ async def game_save_duel_result(duel_id: int, user_id: int, score: int) -> dict:
     async with aiosqlite.connect(DB_PATH) as db:
         db.row_factory = aiosqlite.Row
         cur = await db.execute("SELECT * FROM game_duels WHERE id = ?", (duel_id,))
-        duel = dict(await cur.fetchone())
+        row = await cur.fetchone()
+        if row is None:
+            return {"challenger_done": False, "opponent_done": False, "duel": {}}
+        duel = dict(row)
         if user_id == duel["challenger_id"]:
             await db.execute(
                 "UPDATE game_duels SET challenger_score = ? WHERE id = ?", (score, duel_id)

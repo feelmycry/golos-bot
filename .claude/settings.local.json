@@ -1,0 +1,14 @@
+{
+  "permissions": {
+    "allow": [
+      "PowerShell(Invoke-RestMethod -Uri \"https://api.telegram.org/bot8698934762:AAE3cl8Oe5UdDlap1AVh83hnka5-kLOfH8A/getMe\" | ConvertTo-Json)",
+      "PowerShell(Get-WmiObject *)",
+      "PowerShell(Start-Process python -ArgumentList \"C:\\\\Users\\\\thisi\\\\golos\\\\bot.py\" -WorkingDirectory \"C:\\\\Users\\\\thisi\\\\golos\" -WindowStyle Hidden -PassThru | Select-Object Id, ProcessName)",
+      "PowerShell(Get-Process *)",
+      "PowerShell(Invoke-RestMethod -Uri \"https://api.telegram.org/bot8698934762:AAE3cl8Oe5UdDlap1AVh83hnka5-kLOfH8A/getWebhookInfo\" | ConvertTo-Json)",
+      "PowerShell(Stop-Process *)",
+      "PowerShell(npm install *)",
+      "PowerShell(railway *)"
+    ]
+  }
+}

@@ -4068,7 +4068,7 @@ async def _send_duel_question(message, state: FSMContext, questions: list, idx: 
         b.button(text=opt, callback_data=f"game:duel_ans:{idx}:{i}")
     b.adjust(1)
     text = (
-        f"⚔️ <b>Дуэль — вопрос {idx+1}/5</b>\n\n"
+        f"⚔️ <b>Дуэль — вопрос {idx+1}/{len(questions)}</b>\n\n"
         f"<b>{q['question']}</b>"
     )
     if edit:
@@ -4110,7 +4110,6 @@ async def game_duel_answer(callback: CallbackQuery, state: FSMContext):
         res = await game_save_duel_result(duel_id, callback.from_user.id, score)
         user_id = callback.from_user.id
         bot = callback.bot
-        me = callback.from_user.first_name or "Игрок"
 
         if res["challenger_done"] and res["opponent_done"]:
             duel = res["duel"]
