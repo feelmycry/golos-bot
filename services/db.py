@@ -120,6 +120,24 @@ async def init_db() -> None:
                 PRIMARY KEY (user_id, scenario_id)
             )
         """)
+        await db.execute("""
+            CREATE TABLE IF NOT EXISTS game_guilds (
+                id         INTEGER PRIMARY KEY AUTOINCREMENT,
+                name       TEXT    NOT NULL UNIQUE,
+                emoji      TEXT    DEFAULT '🏰',
+                created_by INTEGER NOT NULL,
+                created_at TEXT    DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+        await db.execute("""
+            CREATE TABLE IF NOT EXISTS game_guild_members (
+                user_id   INTEGER PRIMARY KEY,
+                guild_id  INTEGER NOT NULL,
+                joined_at TEXT    DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (user_id)  REFERENCES game_players(user_id),
+                FOREIGN KEY (guild_id) REFERENCES game_guilds(id)
+            )
+        """)
         await db.commit()
 
 
@@ -802,6 +820,94 @@ async def game_save_scenario_result(user_id: int, scenario_id: str, coins: int, 
             (coins, xp, user_id),
         )
         await db.commit()
+
+
+# ── Guild functions ───────────────────────────────────────────────────────────
+
+async def game_create_guild(creator_id: int, name: str, emoji: str) -> int:
+    async with aiosqlite.connect(DB_PATH) as db:
+        cur = await db.execute(
+            "INSERT INTO game_guilds (name, emoji, created_by) VALUES (?, ?, ?)",
+            (name, emoji, creator_id),
+        )
+        guild_id = cur.lastrowid
+        await db.execute(
+            "INSERT OR REPLACE INTO game_guild_members (user_id, guild_id) VALUES (?, ?)",
+            (creator_id, guild_id),
+        )
+        await db.commit()
+        return guild_id
+
+
+async def game_join_guild(user_id: int, guild_id: int) -> bool:
+    async with aiosqlite.connect(DB_PATH) as db:
+        cur = await db.execute("SELECT id FROM game_guilds WHERE id = ?", (guild_id,))
+        if not await cur.fetchone():
+            return False
+        await db.execute(
+            "INSERT OR REPLACE INTO game_guild_members (user_id, guild_id) VALUES (?, ?)",
+            (user_id, guild_id),
+        )
+        await db.commit()
+        return True
+
+
+async def game_get_my_guild(user_id: int) -> dict | None:
+    async with aiosqlite.connect(DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        cur = await db.execute(
+            """SELECT g.id, g.name, g.emoji, g.created_by,
+                      COUNT(gm.user_id) AS members,
+                      COALESCE(SUM(gp.xp), 0) AS total_xp
+               FROM game_guild_members me
+               JOIN game_guilds g ON g.id = me.guild_id
+               LEFT JOIN game_guild_members gm ON gm.guild_id = g.id
+               LEFT JOIN game_players gp ON gp.user_id = gm.user_id
+               WHERE me.user_id = ?
+               GROUP BY g.id""",
+            (user_id,),
+        )
+        row = await cur.fetchone()
+        return dict(row) if row else None
+
+
+async def game_leave_guild(user_id: int) -> None:
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.execute("DELETE FROM game_guild_members WHERE user_id = ?", (user_id,))
+        await db.commit()
+
+
+async def game_get_guild_leaderboard() -> list[dict]:
+    async with aiosqlite.connect(DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        cur = await db.execute(
+            """SELECT g.id, g.name, g.emoji,
+                      COUNT(gm.user_id) AS members,
+                      COALESCE(SUM(gp.xp), 0) AS total_xp
+               FROM game_guilds g
+               LEFT JOIN game_guild_members gm ON gm.guild_id = g.id
+               LEFT JOIN game_players gp ON gp.user_id = gm.user_id
+               GROUP BY g.id
+               ORDER BY total_xp DESC
+               LIMIT 10"""
+        )
+        return [dict(r) for r in await cur.fetchall()]
+
+
+async def game_get_guild_members(guild_id: int) -> list[dict]:
+    async with aiosqlite.connect(DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        cur = await db.execute(
+            """SELECT u.first_name, gp.xp, gp.coins, gm.joined_at
+               FROM game_guild_members gm
+               JOIN game_players gp ON gp.user_id = gm.user_id
+               JOIN users u ON u.telegram_id = gm.user_id
+               WHERE gm.guild_id = ?
+               ORDER BY gp.xp DESC
+               LIMIT 20""",
+            (guild_id,),
+        )
+        return [dict(r) for r in await cur.fetchall()]
 
 
 # ── Streak notification helpers ───────────────────────────────────────────────

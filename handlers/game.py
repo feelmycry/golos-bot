@@ -11,7 +11,7 @@ from datetime import datetime, date, timedelta
 
 from aiogram import F, Router
 from aiogram.fsm.context import FSMContext
-from aiogram.types import CallbackQuery
+from aiogram.types import CallbackQuery, Message
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 
 from config import ADMIN_IDS
@@ -42,8 +42,14 @@ from services.db import (
     game_save_scenario_result,
     game_get_streak_reminder_users,
     game_apply_legendary_penalty,
+    game_create_guild,
+    game_join_guild,
+    game_get_my_guild,
+    game_leave_guild,
+    game_get_guild_leaderboard,
+    game_get_guild_members,
 )
-from states.game import GameState
+from states.game import GameState, GuildState
 
 router = Router()
 
@@ -2551,8 +2557,9 @@ def _game_main_kb() -> object:
     b.button(text="🏅 Достижения",        callback_data="game:achievements")
     b.button(text="👤 Профиль",           callback_data="game:profile")
     b.button(text="⚡ Легендарный режим", callback_data="game:legendary")
+    b.button(text="🏰 Гильдия",           callback_data="game:guild")
     b.button(text="◀️ Назад в меню",      callback_data="back_to_menu")
-    b.adjust(2, 2, 2, 2, 2, 1)
+    b.adjust(2, 2, 2, 2, 2, 1, 1)
     return b.as_markup()
 
 
@@ -3777,6 +3784,179 @@ async def game_scenario_answer(callback: CallbackQuery, state: FSMContext):
 
 
 # ── Фоновая задача: напоминание о серии ──────────────────────────────────────
+
+# ── Гильдии ──────────────────────────────────────────────────────────────────
+
+@router.callback_query(F.data == "game:guild")
+async def game_guild_menu(callback: CallbackQuery, state: FSMContext):
+    if callback.from_user.id not in ADMIN_IDS:
+        await callback.answer()
+        return
+    user_id = callback.from_user.id
+    guild = await game_get_my_guild(user_id)
+
+    if guild:
+        members = await game_get_guild_members(guild["id"])
+        lines = [f"{guild['emoji']} <b>{guild['name']}</b>",
+                 f"👥 Участников: {guild['members']} | 🏆 Общий XP: {guild['total_xp']:,}",
+                 "", "<b>Топ участников:</b>"]
+        for i, m in enumerate(members[:10], 1):
+            lvl = parse_level(m["xp"])[0]
+            lines.append(f"{i}. {m['first_name']} · Ур.{lvl} · {m['xp']:,} XP")
+
+        b = InlineKeyboardBuilder()
+        b.button(text="📊 Рейтинг гильдий", callback_data="game:guild_leaderboard")
+        b.button(text="🔑 Пригласить (код: #{code})".replace("{code}", str(guild["id"])), callback_data="game:guild_invite")
+        b.button(text="🚪 Покинуть гильдию", callback_data="game:guild_leave")
+        b.button(text="◀️ Назад", callback_data="game:open")
+        b.adjust(1)
+        await callback.message.edit_text("\n".join(lines), parse_mode="HTML", reply_markup=b.as_markup())
+    else:
+        b = InlineKeyboardBuilder()
+        b.button(text="⚔️ Создать гильдию", callback_data="game:guild_create")
+        b.button(text="🔑 Вступить по коду", callback_data="game:guild_join")
+        b.button(text="📊 Рейтинг гильдий", callback_data="game:guild_leaderboard")
+        b.button(text="◀️ Назад", callback_data="game:open")
+        b.adjust(1)
+        await callback.message.edit_text(
+            "🏰 <b>ГИЛЬДИИ</b>\n\nТы не состоишь ни в одной гильдии.\nСоздай свою или вступи по коду от товарища.",
+            parse_mode="HTML", reply_markup=b.as_markup(),
+        )
+    await callback.answer()
+
+
+@router.callback_query(F.data == "game:guild_create")
+async def game_guild_create_start(callback: CallbackQuery, state: FSMContext):
+    if callback.from_user.id not in ADMIN_IDS:
+        await callback.answer()
+        return
+    await state.set_state(GuildState.entering_name)
+    b = InlineKeyboardBuilder()
+    b.button(text="◀️ Отмена", callback_data="game:guild")
+    await callback.message.edit_text(
+        "⚔️ <b>Создание гильдии</b>\n\nВведи название гильдии (до 30 символов):",
+        parse_mode="HTML", reply_markup=b.as_markup(),
+    )
+    await callback.answer()
+
+
+@router.message(GuildState.entering_name)
+async def game_guild_name_input(message: Message, state: FSMContext):
+    if message.from_user.id not in ADMIN_IDS:
+        return
+    name = message.text.strip()[:30]
+    if len(name) < 2:
+        await message.answer("Слишком короткое название. Попробуй снова:")
+        return
+    await state.update_data(guild_name=name)
+    await state.set_state(GuildState.entering_emoji)
+    b = InlineKeyboardBuilder()
+    for emoji in ["⚔️", "🛡️", "🦅", "🔥", "💎", "🏆", "🌟", "🐉"]:
+        b.button(text=emoji, callback_data=f"game:guild_emoji:{emoji}")
+    b.adjust(4)
+    await message.answer(f"Название: <b>{name}</b>\n\nВыбери эмодзи для гильдии:", parse_mode="HTML", reply_markup=b.as_markup())
+
+
+@router.callback_query(F.data.startswith("game:guild_emoji:"))
+async def game_guild_emoji_input(callback: CallbackQuery, state: FSMContext):
+    if callback.from_user.id not in ADMIN_IDS:
+        await callback.answer()
+        return
+    emoji = callback.data.split(":")[-1]
+    data = await state.get_data()
+    name = data.get("guild_name", "Гильдия")
+    user_id = callback.from_user.id
+    try:
+        guild_id = await game_create_guild(user_id, name, emoji)
+        await state.clear()
+        b = InlineKeyboardBuilder()
+        b.button(text="🏰 Моя гильдия", callback_data="game:guild")
+        b.adjust(1)
+        await callback.message.edit_text(
+            f"✅ Гильдия <b>{emoji} {name}</b> создана!\n\n"
+            f"🔑 <b>Код для вступления: #{guild_id}</b>\n"
+            f"Поделись кодом с коллегами.",
+            parse_mode="HTML", reply_markup=b.as_markup(),
+        )
+    except Exception:
+        await callback.message.edit_text("❌ Название уже занято. Попробуй другое:", parse_mode="HTML")
+    await callback.answer()
+
+
+@router.callback_query(F.data == "game:guild_join")
+async def game_guild_join_start(callback: CallbackQuery, state: FSMContext):
+    if callback.from_user.id not in ADMIN_IDS:
+        await callback.answer()
+        return
+    await state.set_state(GuildState.entering_code)
+    b = InlineKeyboardBuilder()
+    b.button(text="◀️ Отмена", callback_data="game:guild")
+    await callback.message.edit_text(
+        "🔑 <b>Вступить в гильдию</b>\n\nВведи код гильдии (число, например: 42):",
+        parse_mode="HTML", reply_markup=b.as_markup(),
+    )
+    await callback.answer()
+
+
+@router.message(GuildState.entering_code)
+async def game_guild_code_input(message: Message, state: FSMContext):
+    if message.from_user.id not in ADMIN_IDS:
+        return
+    try:
+        guild_id = int(message.text.strip().lstrip("#"))
+    except ValueError:
+        await message.answer("Неверный формат кода. Введи число:")
+        return
+    success = await game_join_guild(message.from_user.id, guild_id)
+    await state.clear()
+    if success:
+        guild = await game_get_my_guild(message.from_user.id)
+        b = InlineKeyboardBuilder()
+        b.button(text="🏰 Моя гильдия", callback_data="game:guild")
+        b.adjust(1)
+        await message.answer(
+            f"✅ Ты вступил в гильдию <b>{guild['emoji']} {guild['name']}</b>!",
+            parse_mode="HTML", reply_markup=b.as_markup(),
+        )
+    else:
+        b = InlineKeyboardBuilder()
+        b.button(text="◀️ К гильдиям", callback_data="game:guild")
+        b.adjust(1)
+        await message.answer("❌ Гильдия с таким кодом не найдена.", reply_markup=b.as_markup())
+
+
+@router.callback_query(F.data == "game:guild_leave")
+async def game_guild_leave(callback: CallbackQuery, state: FSMContext):
+    if callback.from_user.id not in ADMIN_IDS:
+        await callback.answer()
+        return
+    await game_leave_guild(callback.from_user.id)
+    b = InlineKeyboardBuilder()
+    b.button(text="🏰 Гильдии", callback_data="game:guild")
+    b.adjust(1)
+    await callback.message.edit_text("🚪 Ты покинул гильдию.", reply_markup=b.as_markup())
+    await callback.answer()
+
+
+@router.callback_query(F.data == "game:guild_leaderboard")
+async def game_guild_leaderboard(callback: CallbackQuery):
+    if callback.from_user.id not in ADMIN_IDS:
+        await callback.answer()
+        return
+    rows = await game_get_guild_leaderboard()
+    medals = ["🥇", "🥈", "🥉"]
+    lines = ["🏆 <b>РЕЙТИНГ ГИЛЬДИЙ</b>\n"]
+    for i, row in enumerate(rows):
+        medal = medals[i] if i < 3 else f"{i+1}."
+        lines.append(f"{medal} {row['emoji']} <b>{row['name']}</b> · {row['members']} чел. · {row['total_xp']:,} XP")
+    if not rows:
+        lines.append("Гильдий пока нет. Создай первую!")
+    b = InlineKeyboardBuilder()
+    b.button(text="◀️ Назад", callback_data="game:guild")
+    b.adjust(1)
+    await callback.message.edit_text("\n".join(lines), parse_mode="HTML", reply_markup=b.as_markup())
+    await callback.answer()
+
 
 async def streak_reminder_task(bot) -> None:
     import asyncio
