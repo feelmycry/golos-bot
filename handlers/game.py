@@ -41,6 +41,7 @@ from services.db import (
     game_get_completed_scenarios,
     game_save_scenario_result,
     game_get_streak_reminder_users,
+    game_apply_legendary_penalty,
 )
 from states.game import GameState
 
@@ -2005,6 +2006,10 @@ LOCATIONS: dict[str, dict] = {
     },
 }
 
+# ── World locations (filled by Task 2) ────────────────────────────────────────
+
+WORLD_LOCATIONS: dict[str, dict] = {}
+
 # ── Keyboard helpers ───────────────────────────────────────────────────────────
 
 def _game_main_kb() -> object:
@@ -2018,8 +2023,9 @@ def _game_main_kb() -> object:
     b.button(text="🎭 Сценарии продаж",   callback_data="game:scenarios")
     b.button(text="🏅 Достижения",        callback_data="game:achievements")
     b.button(text="👤 Профиль",           callback_data="game:profile")
+    b.button(text="⚡ Легендарный режим", callback_data="game:legendary")
     b.button(text="◀️ Назад в меню",      callback_data="back_to_menu")
-    b.adjust(2, 2, 2, 2, 1, 1)
+    b.adjust(2, 2, 2, 2, 2, 1)
     return b.as_markup()
 
 
@@ -2148,13 +2154,108 @@ async def game_open(callback: CallbackQuery, state: FSMContext):
     await callback.answer()
 
 
-# ── Карта локаций ──────────────────────────────────────────────────────────────
+# ── Легендарный режим ─────────────────────────────────────────────────────────
 
-@router.callback_query(F.data == "game:map")
-async def game_map(callback: CallbackQuery):
+@router.callback_query(F.data == "game:legendary")
+async def game_legendary_menu(callback: CallbackQuery, state: FSMContext):
     if callback.from_user.id not in ADMIN_IDS:
         await callback.answer()
         return
+    b = InlineKeyboardBuilder()
+    b.button(text="⚡ Войти в Легендарный режим", callback_data="game:legendary_confirm")
+    b.button(text="◀️ Назад", callback_data="game:open")
+    b.adjust(1)
+    await callback.message.edit_text(
+        "⚡ <b>ЛЕГЕНДАРНЫЙ РЕЖИМ</b>\n\n"
+        "🔴 <b>Внимание! Правила изменены:</b>\n\n"
+        "• Подсказки <b>недоступны</b>\n"
+        "• Неправильный ответ отнимает <b>50% XP и ИР</b> от награды за квест\n"
+        "• XP и ИР не могут упасть ниже 0\n\n"
+        "✅ Правильный ответ даёт <b>2× XP и 2× ИР</b>\n\n"
+        "Готов рискнуть?",
+        parse_mode="HTML", reply_markup=b.as_markup(),
+    )
+    await callback.answer()
+
+
+@router.callback_query(F.data == "game:legendary_confirm")
+async def game_legendary_confirm(callback: CallbackQuery, state: FSMContext):
+    if callback.from_user.id not in ADMIN_IDS:
+        await callback.answer()
+        return
+    await state.update_data(legendary=True)
+    b = InlineKeyboardBuilder()
+    for loc_id, loc in {**LOCATIONS, **WORLD_LOCATIONS}.items():
+        b.button(text=f"{loc['emoji']} {loc['name']}", callback_data=f"game:loc:{loc_id}")
+    b.button(text="◀️ Назад", callback_data="game:legendary")
+    b.adjust(1)
+    await callback.message.edit_text(
+        "⚡ <b>Легендарный режим активирован!</b>\n\nВыбери локацию:",
+        parse_mode="HTML", reply_markup=b.as_markup(),
+    )
+    await callback.answer()
+
+
+@router.callback_query(F.data.startswith("game:loc:"))
+async def game_loc_legendary(callback: CallbackQuery, state: FSMContext):
+    if callback.from_user.id not in ADMIN_IDS:
+        await callback.answer()
+        return
+
+    loc_id = callback.data[len("game:loc:"):]
+    all_locs = {**LOCATIONS, **WORLD_LOCATIONS}
+    loc = all_locs.get(loc_id)
+    if not loc:
+        await callback.answer("Локация не найдена", show_alert=True)
+        return
+
+    player = await game_get_or_create_player(callback.from_user.id)
+    level = parse_level(player["xp"])[0]
+    min_level = loc.get("min_level", 1)
+    if level < min_level:
+        await callback.answer(
+            f"🔒 Локация откроется на уровне {min_level}. Ваш уровень: {level}.",
+            show_alert=True,
+        )
+        return
+
+    completed = await game_get_completed_quests(callback.from_user.id)
+    loc_progress = await game_get_location_progress(callback.from_user.id)
+    rep = loc_progress.get(loc_id, {}).get("reputation", 0)
+    shares = loc_progress.get(loc_id, {}).get("shares", 0)
+    rank = _get_rank(loc, rep)
+    done_q = sum(1 for q in loc["quests"] if q["id"] in completed)
+
+    income_line = (
+        f"📈 Акций: <b>{shares}</b> · Доход: {shares * loc['income_per_hour']} ИР/час\n"
+        if shares > 0 else
+        f"📈 Акций: <b>0</b> · Пройди квесты — за каждый получаешь акцию!\n"
+    )
+
+    text = (
+        f"{loc['emoji']} <b>{loc['name']}</b>\n"
+        f"<i>{loc['sector']}</i>\n\n"
+        f"{loc['description']}\n\n"
+        f"🏅 Репутация: <b>{rep}</b> — {rank}\n"
+        f"{income_line}"
+        f"✅ Квестов пройдено: {done_q}/{len(loc['quests'])}\n\n"
+        f"⚡ <i>Легендарный режим активен</i>\n\n"
+        f"Выбери квест:"
+    )
+    # Do NOT clear state here — preserve the legendary=True flag
+    await callback.message.edit_text(text, parse_mode="HTML", reply_markup=_location_kb(loc_id, loc["quests"], completed))
+    await callback.answer()
+
+
+# ── Карта локаций ──────────────────────────────────────────────────────────────
+
+@router.callback_query(F.data == "game:map")
+async def game_map(callback: CallbackQuery, state: FSMContext):
+    if callback.from_user.id not in ADMIN_IDS:
+        await callback.answer()
+        return
+
+    await state.update_data(legendary=False)
 
     player = await game_get_or_create_player(callback.from_user.id)
     level = parse_level(player["xp"])[0]
@@ -2316,6 +2417,7 @@ async def game_answer(callback: CallbackQuery, state: FSMContext):
 
     state_data = await state.get_data()
     eliminated = state_data.get("eliminated")
+    legendary = state_data.get("legendary", False)
 
     is_correct = answer_idx == quest["correct"]
     completed = await game_get_completed_quests(callback.from_user.id)
@@ -2329,18 +2431,19 @@ async def game_answer(callback: CallbackQuery, state: FSMContext):
     xp_gained = 0
     coins_gained = 0
     rep_gained = 0
+    penalty_text = ""
 
     today_str = date.today().isoformat()
     today_tasks = _get_today_tasks()
 
     if is_correct and not already_done:
-        xp_raw = quest["xp"]
+        xp_raw = quest["xp"] * (2 if legendary else 1)
         boosts = player_before.get("xp_boost_charges", 0)
         if boosts > 0:
             xp_raw = int(xp_raw * 2)
             await game_use_xp_boost(callback.from_user.id)
         xp_gained = int(xp_raw * mult)
-        coins_gained = quest["coins"]
+        coins_gained = quest["coins"] * (2 if legendary else 1)
         rep_gained = quest["rep"]
         await game_save_quest_result(callback.from_user.id, quest_id, loc_id, xp_gained, coins_gained, rep_gained)
         for tid in today_tasks:
@@ -2356,6 +2459,12 @@ async def game_answer(callback: CallbackQuery, state: FSMContext):
             task = DAILY_TASKS[tid]
             if task["type"] == "correct_answers":
                 await game_update_daily_task(callback.from_user.id, today_str, tid, 1, task["target"])
+    else:
+        if legendary:
+            xp_penalty = quest["xp"] // 2
+            coins_penalty = quest["coins"] // 2
+            await game_apply_legendary_penalty(callback.from_user.id, xp_penalty, coins_penalty)
+            penalty_text = f"\n⚡ <b>Легендарный штраф:</b> -{xp_penalty} XP, -{coins_penalty} ИР"
 
     player_after = await game_get_or_create_player(callback.from_user.id)
     level_after = parse_level(player_after["xp"])[0]
@@ -2382,7 +2491,7 @@ async def game_answer(callback: CallbackQuery, state: FSMContext):
         )
     else:
         result_header = "❌ <b>Неверно.</b>"
-        reward_line = ""
+        reward_line = penalty_text
 
     week_start = _current_week_start()
     if is_correct and not already_done and xp_gained > 0:

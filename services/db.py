@@ -500,6 +500,15 @@ async def game_update_player(user_id: int, xp: int = 0, coins: int = 0) -> None:
         await db.commit()
 
 
+async def game_apply_legendary_penalty(user_id: int, xp_penalty: int, coins_penalty: int) -> None:
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.execute(
+            "UPDATE game_players SET xp = MAX(0, xp - ?), coins = MAX(0, coins - ?) WHERE user_id = ?",
+            (xp_penalty, coins_penalty, user_id),
+        )
+        await db.commit()
+
+
 async def game_collect_income(user_id: int, location_id: str, amount: int) -> None:
     now = datetime.utcnow().isoformat()
     async with aiosqlite.connect(DB_PATH) as db:
