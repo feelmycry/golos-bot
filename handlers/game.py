@@ -2318,7 +2318,7 @@ WORLD_LOCATIONS: dict[str, dict] = {
                 "question": "Как называется человекоподобный робот Tesla, анонсированный в 2021 году?",
                 "options": ["Tesla Bot", "Optimus", "Atlas Tesla", "RoboTesla"],
                 "correct": 1, "xp": 150, "coins": 100, "rep": 152,
-                "explanation": "Optimus (Tesla Bot) — человекоподобный робот, анонсированный в августе 2021 году. Маск называет его потенциально самым важным продуктом Tesla — больше, чем сам автомобиль. К 2025 году планируется промышленное применение на заводах.",
+                "explanation": "Optimus (Tesla Bot) — человекоподобный робот, анонсированный в августе 2021 года. Маск называет его потенциально самым важным продуктом Tesla — больше, чем сам автомобиль. К 2025 году планируется промышленное применение на заводах.",
             },
             {
                 "id": "tesla_q13",
@@ -2834,6 +2834,9 @@ async def game_map(callback: CallbackQuery, state: FSMContext):
 
 @router.callback_query(F.data == "game:worldmap")
 async def game_worldmap(callback: CallbackQuery, state: FSMContext):
+    if callback.from_user.id not in ADMIN_IDS:
+        await callback.answer()
+        return
     user_id = callback.from_user.id
     player = await game_get_or_create_player(user_id)
     level = parse_level(player["xp"])[0]
