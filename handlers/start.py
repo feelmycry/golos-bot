@@ -67,6 +67,30 @@ async def cmd_start(message: Message, state: FSMContext, command: CommandObject 
                 await message.answer("❌ Дуэль не найдена или уже начата.")
                 # fall through to normal start
 
+    elif args and args.startswith("mentor_"):
+        try:
+            mentor_id = int(args[7:])
+        except ValueError:
+            mentor_id = None
+        if mentor_id:
+            from services.db import game_link_mentor
+            linked = await game_link_mentor(mentor_id, message.from_user.id)
+            if linked:
+                await message.answer(
+                    f"👨‍🏫 Наставник привязан! Теперь когда ты отвечаешь верно — наставник получает бонус XP.",
+                    parse_mode="HTML",
+                )
+                try:
+                    await message.bot.send_message(
+                        mentor_id,
+                        f"🎉 {message.from_user.first_name or 'Новый игрок'} принял твоё наставничество!"
+                    )
+                except Exception:
+                    pass
+            else:
+                await message.answer("❌ Ссылка недействительна или ты уже привязан к наставнику.")
+        # fall through to normal start menu
+
     name = message.from_user.first_name or "Коллега"
     await message.answer(
         f"Привет, {name}! 👋\n\n"

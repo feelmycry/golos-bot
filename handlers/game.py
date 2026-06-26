@@ -56,6 +56,10 @@ from services.db import (
     game_save_duel_result,
     game_get_duel_by_challenger,
     game_update_player,
+    game_link_mentor,
+    game_get_mentor,
+    game_get_mentees,
+    game_add_mentor_bonus,
 )
 from states.game import GameState, GuildState
 
@@ -2567,8 +2571,9 @@ def _game_main_kb() -> object:
     b.button(text="⚡ Легендарный режим", callback_data="game:legendary")
     b.button(text="🏰 Гильдия",           callback_data="game:guild")
     b.button(text="⚔️ Дуэль",             callback_data="game:duel")
+    b.button(text="👨‍🏫 Наставник",         callback_data="game:mentor")
     b.button(text="◀️ Назад в меню",      callback_data="back_to_menu")
-    b.adjust(2, 2, 2, 2, 2, 2, 1)
+    b.adjust(2, 2, 2, 2, 2, 2, 1, 1)
     return b.as_markup()
 
 
@@ -3076,6 +3081,16 @@ async def game_answer(callback: CallbackQuery, state: FSMContext):
     week_start = _current_week_start()
     if is_correct and not already_done and xp_gained > 0:
         await game_add_weekly_xp(callback.from_user.id, week_start, xp_gained)
+        mentor_id = await game_get_mentor(callback.from_user.id)
+        if mentor_id:
+            await game_add_mentor_bonus(mentor_id, xp_gained)
+            try:
+                await callback.bot.send_message(
+                    mentor_id,
+                    f"👨‍🏫 Твой ученик ответил верно! Ты получил +{max(1, xp_gained//10)} XP бонуса наставника."
+                )
+            except Exception:
+                pass
 
     new_achievements = []
     if is_correct:
@@ -4158,3 +4173,42 @@ async def game_duel_answer(callback: CallbackQuery, state: FSMContext):
             )
         await state.clear()
         await callback.answer()
+
+
+# ── Наставничество ─────────────────────────────────────────────────────────────
+
+@router.callback_query(F.data == "game:mentor")
+async def game_mentor_menu(callback: CallbackQuery):
+    if callback.from_user.id not in ADMIN_IDS:
+        await callback.answer()
+        return
+
+    user_id = callback.from_user.id
+    mentor_id = await game_get_mentor(user_id)
+    mentees = await game_get_mentees(user_id)
+    bot_info = await callback.bot.get_me()
+
+    lines = ["👨‍🏫 <b>НАСТАВНИЧЕСТВО</b>\n"]
+
+    if mentor_id:
+        lines.append(f"📌 У тебя есть наставник (ID:{mentor_id})")
+    else:
+        lines.append("📌 У тебя нет наставника.")
+
+    if mentees:
+        lines.append(f"\n👥 <b>Твои ученики ({len(mentees)}):</b>")
+        for m in mentees:
+            lvl = parse_level(m["xp"])[0]
+            lines.append(f"• {m['first_name']} · Ур.{lvl} · {m['xp']:,} XP")
+        lines.append("\n✨ Ты получаешь <b>+10% XP</b> каждый раз, когда ученик отвечает верно.")
+    else:
+        lines.append("\n👥 Учеников пока нет.")
+
+    invite_link = f"https://t.me/{bot_info.username}?start=mentor_{user_id}"
+    lines.append(f"\n🔗 <b>Ссылка для учеников:</b>\n<code>{invite_link}</code>")
+
+    b = InlineKeyboardBuilder()
+    b.button(text="◀️ Назад", callback_data="game:open")
+    b.adjust(1)
+    await callback.message.edit_text("\n".join(lines), parse_mode="HTML", reply_markup=b.as_markup())
+    await callback.answer()

@@ -150,6 +150,13 @@ async def init_db() -> None:
                 created_at       TEXT    DEFAULT CURRENT_TIMESTAMP
             )
         """)
+        await db.execute("""
+            CREATE TABLE IF NOT EXISTS game_mentors (
+                mentor_id  INTEGER NOT NULL,
+                mentee_id  INTEGER PRIMARY KEY,
+                created_at TEXT    DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
         await db.commit()
 
 
@@ -1009,3 +1016,54 @@ async def game_get_duel_by_challenger(challenger_id: int) -> dict | None:
         )
         row = await cur.fetchone()
         return dict(row) if row else None
+
+
+# ── Mentor functions ──────────────────────────────────────────────────────────
+
+async def game_link_mentor(mentor_id: int, mentee_id: int) -> bool:
+    if mentor_id == mentee_id:
+        return False
+    async with aiosqlite.connect(DB_PATH) as db:
+        cur = await db.execute("SELECT mentee_id FROM game_mentors WHERE mentee_id = ?", (mentee_id,))
+        if await cur.fetchone():
+            return False  # already has mentor
+        await db.execute(
+            "INSERT INTO game_mentors (mentor_id, mentee_id) VALUES (?, ?)",
+            (mentor_id, mentee_id),
+        )
+        await db.commit()
+        return True
+
+
+async def game_get_mentor(mentee_id: int) -> int | None:
+    async with aiosqlite.connect(DB_PATH) as db:
+        cur = await db.execute(
+            "SELECT mentor_id FROM game_mentors WHERE mentee_id = ?", (mentee_id,)
+        )
+        row = await cur.fetchone()
+        return row[0] if row else None
+
+
+async def game_get_mentees(mentor_id: int) -> list[dict]:
+    async with aiosqlite.connect(DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        cur = await db.execute(
+            """SELECT u.first_name, gp.xp, gp.level, gm.created_at
+               FROM game_mentors gm
+               JOIN users u ON u.telegram_id = gm.mentee_id
+               JOIN game_players gp ON gp.user_id = gm.mentee_id
+               WHERE gm.mentor_id = ?
+               ORDER BY gp.xp DESC""",
+            (mentor_id,),
+        )
+        return [dict(r) for r in await cur.fetchall()]
+
+
+async def game_add_mentor_bonus(mentor_id: int, xp: int) -> None:
+    bonus = max(1, xp // 10)  # 10% of mentee's XP gain
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.execute(
+            "UPDATE game_players SET xp = xp + ?, coins = coins + ? WHERE user_id = ?",
+            (bonus, bonus // 2, mentor_id),
+        )
+        await db.commit()
