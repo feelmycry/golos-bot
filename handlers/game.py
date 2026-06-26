@@ -2069,6 +2069,7 @@ def _quest_options_kb(
     correct: int,
     answered: int | None,
     eliminated: int | None = None,
+    legendary: bool = False,
 ) -> object:
     b = InlineKeyboardBuilder()
     if answered is None:
@@ -2079,7 +2080,8 @@ def _quest_options_kb(
                 b.button(text=_NUM[i], callback_data=f"game:answer:{loc_id}:{quest_id}:{i}")
         b.adjust(len(options))
     else:
-        b.button(text="▶️ Продолжить", callback_data=f"game:location:{loc_id}")
+        continue_cb = f"game:loc:{loc_id}" if legendary else f"game:location:{loc_id}"
+        b.button(text="▶️ Продолжить", callback_data=continue_cb)
         b.adjust(1)
     return b.as_markup()
 
@@ -2361,7 +2363,7 @@ async def game_quest(callback: CallbackQuery, state: FSMContext):
 
     parts = callback.data.split(":")
     loc_id, quest_id = parts[2], parts[3]
-    loc = LOCATIONS.get(loc_id)
+    loc = LOCATIONS.get(loc_id) or WORLD_LOCATIONS.get(loc_id)
     quest = next((q for q in loc["quests"] if q["id"] == quest_id), None) if loc else None
     if not quest:
         await callback.answer("Квест не найден", show_alert=True)
@@ -2374,8 +2376,11 @@ async def game_quest(callback: CallbackQuery, state: FSMContext):
     hints = player.get("hint_charges", 0)
     boosts = player.get("xp_boost_charges", 0)
 
+    state_data = await state.get_data()
+    legendary = state_data.get("legendary", False)
+
     eliminated = None
-    if not already_done and hints > 0:
+    if not already_done and hints > 0 and not legendary:
         eliminated = _pick_eliminated(quest["options"], quest["correct"])
         await game_use_hint(callback.from_user.id)
 
@@ -2409,7 +2414,7 @@ async def game_answer(callback: CallbackQuery, state: FSMContext):
 
     parts = callback.data.split(":")
     loc_id, quest_id, answer_idx = parts[2], parts[3], int(parts[4])
-    loc = LOCATIONS.get(loc_id)
+    loc = LOCATIONS.get(loc_id) or WORLD_LOCATIONS.get(loc_id)
     quest = next((q for q in loc["quests"] if q["id"] == quest_id), None) if loc else None
     if not quest:
         await callback.answer("Квест не найден", show_alert=True)
@@ -2460,7 +2465,7 @@ async def game_answer(callback: CallbackQuery, state: FSMContext):
             if task["type"] == "correct_answers":
                 await game_update_daily_task(callback.from_user.id, today_str, tid, 1, task["target"])
     else:
-        if legendary:
+        if legendary and not already_done:
             xp_penalty = quest["xp"] // 2
             coins_penalty = quest["coins"] // 2
             await game_apply_legendary_penalty(callback.from_user.id, xp_penalty, coins_penalty)
@@ -2523,9 +2528,9 @@ async def game_answer(callback: CallbackQuery, state: FSMContext):
         f"📊 Уровень {level_after} | XP {xp_in}/{xp_need}"
     )
 
-    kb = _quest_options_kb(loc_id, quest_id, quest["options"], quest["correct"], answer_idx, eliminated)
+    kb = _quest_options_kb(loc_id, quest_id, quest["options"], quest["correct"], answer_idx, eliminated, legendary=legendary)
     await callback.message.edit_text(text, parse_mode="HTML", reply_markup=kb)
-    await state.clear()
+    await state.update_data(legendary=legendary)
     await callback.answer("✅ Верно!" if is_correct else "❌ Неверно")
 
 
