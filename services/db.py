@@ -85,6 +85,17 @@ async def init_db() -> None:
                 await db.execute(f"ALTER TABLE game_players ADD COLUMN {col}")
             except Exception:
                 pass
+        await db.execute("""
+            CREATE TABLE IF NOT EXISTS game_daily_progress (
+                user_id   INTEGER NOT NULL,
+                date      TEXT    NOT NULL,
+                task_id   TEXT    NOT NULL,
+                progress  INTEGER DEFAULT 0,
+                completed INTEGER DEFAULT 0,
+                claimed   INTEGER DEFAULT 0,
+                PRIMARY KEY (user_id, date, task_id)
+            )
+        """)
         await db.commit()
 
 
@@ -550,6 +561,93 @@ async def game_use_xp_boost(user_id: int) -> bool:
         )
         await db.commit()
         return True
+
+
+async def game_update_daily_task(
+    user_id: int, date_str: str, task_id: str, amount: int, target: int
+) -> tuple[int, bool]:
+    """Increment task progress. Returns (new_progress, is_completed)."""
+    async with aiosqlite.connect(DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        cur = await db.execute(
+            "SELECT progress, completed FROM game_daily_progress WHERE user_id=? AND date=? AND task_id=?",
+            (user_id, date_str, task_id),
+        )
+        row = await cur.fetchone()
+        if row and row["completed"]:
+            return target, True
+        current = row["progress"] if row else 0
+        new_progress = min(current + amount, target)
+        completed = 1 if new_progress >= target else 0
+        await db.execute(
+            """INSERT INTO game_daily_progress (user_id, date, task_id, progress, completed)
+               VALUES (?, ?, ?, ?, ?)
+               ON CONFLICT(user_id, date, task_id) DO UPDATE SET
+                 progress = excluded.progress, completed = excluded.completed""",
+            (user_id, date_str, task_id, new_progress, completed),
+        )
+        await db.commit()
+        return new_progress, bool(completed)
+
+
+async def game_get_daily_progress(user_id: int, date_str: str) -> dict[str, dict]:
+    async with aiosqlite.connect(DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        cur = await db.execute(
+            "SELECT task_id, progress, completed, claimed FROM game_daily_progress WHERE user_id=? AND date=?",
+            (user_id, date_str),
+        )
+        return {r["task_id"]: dict(r) for r in await cur.fetchall()}
+
+
+async def game_claim_daily_reward(user_id: int, date_str: str, task_id: str, xp: int, coins: int) -> bool:
+    async with aiosqlite.connect(DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        cur = await db.execute(
+            "SELECT completed, claimed FROM game_daily_progress WHERE user_id=? AND date=? AND task_id=?",
+            (user_id, date_str, task_id),
+        )
+        row = await cur.fetchone()
+        if not row or not row["completed"] or row["claimed"]:
+            return False
+        await db.execute(
+            "UPDATE game_daily_progress SET claimed=1 WHERE user_id=? AND date=? AND task_id=?",
+            (user_id, date_str, task_id),
+        )
+        await db.execute(
+            "UPDATE game_players SET xp=xp+?, coins=coins+? WHERE user_id=?",
+            (xp, coins, user_id),
+        )
+        await db.commit()
+        return True
+
+
+async def game_get_leaderboard(limit: int = 15) -> list[dict]:
+    async with aiosqlite.connect(DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        cur = await db.execute(
+            """SELECT u.first_name, p.user_id, p.xp,
+                      COUNT(DISTINCT q.quest_id) AS quests_done
+               FROM game_players p
+               JOIN users u ON p.user_id = u.telegram_id
+               LEFT JOIN game_quest_log q ON q.user_id = p.user_id
+               WHERE p.xp > 0
+               GROUP BY p.user_id
+               ORDER BY p.xp DESC
+               LIMIT ?""",
+            (limit,),
+        )
+        return [dict(r) for r in await cur.fetchall()]
+
+
+async def game_get_player_rank(user_id: int) -> int:
+    async with aiosqlite.connect(DB_PATH) as db:
+        cur = await db.execute(
+            "SELECT COUNT(*) FROM game_players WHERE xp > (SELECT COALESCE(xp,0) FROM game_players WHERE user_id=?)",
+            (user_id,),
+        )
+        row = await cur.fetchone()
+        return (row[0] + 1) if row else 1
 
 
 async def game_add_shop_item(user_id: int, item: str, cost: int) -> bool:
