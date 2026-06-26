@@ -6,7 +6,9 @@ from __future__ import annotations
 
 import html
 import hashlib
+import json
 import math
+import random
 from datetime import datetime, date, timedelta
 
 from aiogram import F, Router
@@ -48,6 +50,12 @@ from services.db import (
     game_leave_guild,
     game_get_guild_leaderboard,
     game_get_guild_members,
+    game_create_duel,
+    game_get_duel,
+    game_join_duel,
+    game_save_duel_result,
+    game_get_duel_by_challenger,
+    game_update_player,
 )
 from states.game import GameState, GuildState
 
@@ -2558,8 +2566,9 @@ def _game_main_kb() -> object:
     b.button(text="👤 Профиль",           callback_data="game:profile")
     b.button(text="⚡ Легендарный режим", callback_data="game:legendary")
     b.button(text="🏰 Гильдия",           callback_data="game:guild")
+    b.button(text="⚔️ Дуэль",             callback_data="game:duel")
     b.button(text="◀️ Назад в меню",      callback_data="back_to_menu")
-    b.adjust(2, 2, 2, 2, 2, 1, 1)
+    b.adjust(2, 2, 2, 2, 2, 2, 1)
     return b.as_markup()
 
 
@@ -4003,3 +4012,150 @@ async def streak_reminder_task(bot) -> None:
                     pass
         except Exception:
             pass
+
+
+# ── PvP Дуэль ────────────────────────────────────────────────────────────────
+
+def _pick_duel_questions(n: int = 5) -> list[dict]:
+    all_quests = []
+    for loc in {**LOCATIONS, **WORLD_LOCATIONS}.values():
+        for q in loc["quests"]:
+            all_quests.append({
+                "id": q["id"], "question": q["question"],
+                "options": q["options"], "correct": q["correct"],
+                "xp": q["xp"], "coins": q["coins"],
+            })
+    return random.sample(all_quests, min(n, len(all_quests)))
+
+
+@router.callback_query(F.data == "game:duel")
+async def game_duel_menu(callback: CallbackQuery, state: FSMContext):
+    if callback.from_user.id not in ADMIN_IDS:
+        await callback.answer()
+        return
+    b = InlineKeyboardBuilder()
+    b.button(text="⚔️ Создать дуэль", callback_data="game:duel_create")
+    b.button(text="◀️ Назад", callback_data="game:open")
+    b.adjust(1)
+    await callback.message.edit_text(
+        "⚔️ <b>PvP ДУЭЛЬ</b>\n\n"
+        "Вызови коллегу на батл из 5 вопросов!\n\n"
+        "• Ты отвечаешь на 5 вопросов прямо сейчас\n"
+        "• Получаешь ссылку-вызов для соперника\n"
+        "• Когда соперник ответит — узнаете результаты\n"
+        "• Победитель получает <b>+500 XP, +300 ИР</b>",
+        parse_mode="HTML", reply_markup=b.as_markup(),
+    )
+    await callback.answer()
+
+
+@router.callback_query(F.data == "game:duel_create")
+async def game_duel_create(callback: CallbackQuery, state: FSMContext):
+    if callback.from_user.id not in ADMIN_IDS:
+        await callback.answer()
+        return
+    questions = _pick_duel_questions(5)
+    duel_id = await game_create_duel(callback.from_user.id, json.dumps(questions, ensure_ascii=False))
+    await state.update_data(duel_id=duel_id, duel_questions=questions, duel_idx=0, duel_score=0)
+    await _send_duel_question(callback.message, state, questions, 0, edit=True)
+    await callback.answer()
+
+
+async def _send_duel_question(message, state: FSMContext, questions: list, idx: int, edit: bool = False):
+    q = questions[idx]
+    b = InlineKeyboardBuilder()
+    for i, opt in enumerate(q["options"]):
+        b.button(text=opt, callback_data=f"game:duel_ans:{idx}:{i}")
+    b.adjust(1)
+    text = (
+        f"⚔️ <b>Дуэль — вопрос {idx+1}/5</b>\n\n"
+        f"<b>{q['question']}</b>"
+    )
+    if edit:
+        await message.edit_text(text, parse_mode="HTML", reply_markup=b.as_markup())
+    else:
+        await message.answer(text, parse_mode="HTML", reply_markup=b.as_markup())
+
+
+@router.callback_query(F.data.startswith("game:duel_ans:"))
+async def game_duel_answer(callback: CallbackQuery, state: FSMContext):
+    if callback.from_user.id not in ADMIN_IDS:
+        await callback.answer()
+        return
+    _, _, idx_str, ans_str = callback.data.split(":")
+    idx, ans = int(idx_str), int(ans_str)
+    data = await state.get_data()
+    questions = data.get("duel_questions", [])
+    score = data.get("duel_score", 0)
+    duel_id = data.get("duel_id")
+
+    if idx >= len(questions):
+        await callback.answer()
+        return
+
+    q = questions[idx]
+    is_correct = (ans == q["correct"])
+    if is_correct:
+        score += 1
+
+    result_icon = "✅" if is_correct else "❌"
+    next_idx = idx + 1
+
+    if next_idx < len(questions):
+        await state.update_data(duel_score=score)
+        await callback.answer(f"{result_icon} {'Верно!' if is_correct else 'Неверно!'}")
+        await _send_duel_question(callback.message, state, questions, next_idx, edit=True)
+    else:
+        # Дуэль завершена для этого игрока
+        res = await game_save_duel_result(duel_id, callback.from_user.id, score)
+        user_id = callback.from_user.id
+        bot = callback.bot
+        me = callback.from_user.first_name or "Игрок"
+
+        if res["challenger_done"] and res["opponent_done"]:
+            duel = res["duel"]
+            c_score = duel["challenger_score"]
+            o_score = duel["opponent_score"]
+            if c_score > o_score:
+                winner_id = duel["challenger_id"]
+            elif o_score > c_score:
+                winner_id = duel["opponent_id"]
+            else:
+                winner_id = None
+
+            result_text = (
+                f"⚔️ <b>Дуэль завершена!</b>\n\n"
+                f"Счёт: {c_score}/5 vs {o_score}/5\n"
+            )
+            if winner_id:
+                result_text += "🏆 <b>Победитель получает +500 XP, +300 ИР!</b>"
+                await game_update_player(winner_id, xp=500, coins=300)
+            else:
+                result_text += "🤝 <b>Ничья! Оба получают +150 XP.</b>"
+                await game_update_player(duel["challenger_id"], xp=150)
+                await game_update_player(duel["opponent_id"], xp=150)
+
+            b = InlineKeyboardBuilder()
+            b.button(text="🎮 В игру", callback_data="game:open")
+            b.adjust(1)
+            await callback.message.edit_text(result_text, parse_mode="HTML", reply_markup=b.as_markup())
+            # Уведомить второго игрока
+            other_id = duel["opponent_id"] if user_id == duel["challenger_id"] else duel["challenger_id"]
+            try:
+                await bot.send_message(other_id, result_text, parse_mode="HTML")
+            except Exception:
+                pass
+        else:
+            bot_info = await bot.get_me()
+            invite_link = f"https://t.me/{bot_info.username}?start=duel_{duel_id}"
+            b = InlineKeyboardBuilder()
+            b.button(text="🎮 В игру", callback_data="game:open")
+            b.adjust(1)
+            await callback.message.edit_text(
+                f"⚔️ Твой счёт: <b>{score}/5</b>\n\n"
+                f"Отправь ссылку сопернику:\n<code>{invite_link}</code>\n\n"
+                "Когда он ответит — ты получишь уведомление!",
+                parse_mode="HTML", reply_markup=b.as_markup(),
+            )
+        await state.clear()
+        await callback.answer()

@@ -1,6 +1,6 @@
 from aiogram import Router, F
 from aiogram.types import Message, CallbackQuery
-from aiogram.filters import CommandStart, Command
+from aiogram.filters import CommandStart, Command, CommandObject
 from aiogram.fsm.context import FSMContext
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 
@@ -38,9 +38,35 @@ def _main_kb():
 
 
 @router.message(CommandStart())
-async def cmd_start(message: Message, state: FSMContext):
+async def cmd_start(message: Message, state: FSMContext, command: CommandObject = None):
     await state.clear()
     await upsert_user(message.from_user.id, message.from_user.username, message.from_user.first_name)
+
+    args = command.args if command else None
+
+    if args and args.startswith("duel_"):
+        try:
+            duel_id = int(args[5:])
+        except ValueError:
+            duel_id = None
+        if duel_id:
+            import json as _json
+            from services.db import game_join_duel, game_get_duel
+            joined = await game_join_duel(duel_id, message.from_user.id)
+            if joined:
+                duel = await game_get_duel(duel_id)
+                questions = _json.loads(duel["questions_json"])
+                await state.update_data(
+                    duel_id=duel_id, duel_questions=questions, duel_idx=0, duel_score=0,
+                    is_opponent=True,
+                )
+                from handlers.game import _send_duel_question
+                await _send_duel_question(message, state, questions, 0, edit=False)
+                return
+            else:
+                await message.answer("❌ Дуэль не найдена или уже начата.")
+                # fall through to normal start
+
     name = message.from_user.first_name or "Коллега"
     await message.answer(
         f"Привет, {name}! 👋\n\n"

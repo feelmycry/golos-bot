@@ -138,6 +138,18 @@ async def init_db() -> None:
                 FOREIGN KEY (guild_id) REFERENCES game_guilds(id)
             )
         """)
+        await db.execute("""
+            CREATE TABLE IF NOT EXISTS game_duels (
+                id               INTEGER PRIMARY KEY AUTOINCREMENT,
+                challenger_id    INTEGER NOT NULL,
+                opponent_id      INTEGER,
+                questions_json   TEXT    NOT NULL,
+                challenger_score INTEGER DEFAULT -1,
+                opponent_score   INTEGER DEFAULT -1,
+                status           TEXT    DEFAULT 'pending',
+                created_at       TEXT    DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
         await db.commit()
 
 
@@ -922,3 +934,75 @@ async def game_get_streak_reminder_users() -> list[dict]:
                AND CAST((julianday('now') - julianday(last_active)) * 24 AS INTEGER) BETWEEN 20 AND 23"""
         )
         return [dict(r) for r in await cur.fetchall()]
+
+
+# ── Duel functions ────────────────────────────────────────────────────────────
+
+async def game_create_duel(challenger_id: int, questions_json: str) -> int:
+    async with aiosqlite.connect(DB_PATH) as db:
+        cur = await db.execute(
+            "INSERT INTO game_duels (challenger_id, questions_json) VALUES (?, ?)",
+            (challenger_id, questions_json),
+        )
+        await db.commit()
+        return cur.lastrowid
+
+
+async def game_get_duel(duel_id: int) -> dict | None:
+    async with aiosqlite.connect(DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        cur = await db.execute("SELECT * FROM game_duels WHERE id = ?", (duel_id,))
+        row = await cur.fetchone()
+        return dict(row) if row else None
+
+
+async def game_join_duel(duel_id: int, opponent_id: int) -> bool:
+    async with aiosqlite.connect(DB_PATH) as db:
+        cur = await db.execute(
+            "SELECT challenger_id, status FROM game_duels WHERE id = ?", (duel_id,)
+        )
+        row = await cur.fetchone()
+        if not row or row[0] == opponent_id or row[1] != "pending":
+            return False
+        await db.execute(
+            "UPDATE game_duels SET opponent_id = ?, status = 'in_progress' WHERE id = ?",
+            (opponent_id, duel_id),
+        )
+        await db.commit()
+        return True
+
+
+async def game_save_duel_result(duel_id: int, user_id: int, score: int) -> dict:
+    async with aiosqlite.connect(DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        cur = await db.execute("SELECT * FROM game_duels WHERE id = ?", (duel_id,))
+        duel = dict(await cur.fetchone())
+        if user_id == duel["challenger_id"]:
+            await db.execute(
+                "UPDATE game_duels SET challenger_score = ? WHERE id = ?", (score, duel_id)
+            )
+            duel["challenger_score"] = score
+        else:
+            await db.execute(
+                "UPDATE game_duels SET opponent_score = ? WHERE id = ?", (score, duel_id)
+            )
+            duel["opponent_score"] = score
+        challenger_done = duel["challenger_score"] >= 0
+        opponent_done = duel["opponent_score"] >= 0
+        if challenger_done and opponent_done:
+            await db.execute(
+                "UPDATE game_duels SET status = 'completed' WHERE id = ?", (duel_id,)
+            )
+        await db.commit()
+        return {"challenger_done": challenger_done, "opponent_done": opponent_done, "duel": duel}
+
+
+async def game_get_duel_by_challenger(challenger_id: int) -> dict | None:
+    async with aiosqlite.connect(DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        cur = await db.execute(
+            "SELECT * FROM game_duels WHERE challenger_id = ? AND status != 'completed' ORDER BY created_at DESC LIMIT 1",
+            (challenger_id,),
+        )
+        row = await cur.fetchone()
+        return dict(row) if row else None
