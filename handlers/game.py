@@ -3825,6 +3825,30 @@ async def game_guild_menu(callback: CallbackQuery, state: FSMContext):
     await callback.answer()
 
 
+@router.callback_query(F.data == "game:guild_invite")
+async def game_guild_invite(callback: CallbackQuery):
+    if callback.from_user.id not in ADMIN_IDS:
+        await callback.answer()
+        return
+    user_id = callback.from_user.id
+    guild = await game_get_my_guild(user_id)
+
+    if not guild:
+        await callback.answer("Ты не в гильдии", show_alert=True)
+        return
+
+    await callback.answer()
+    b = InlineKeyboardBuilder()
+    b.button(text="◀️ Моя гильдия", callback_data="game:guild")
+    b.adjust(1)
+    await callback.message.edit_text(
+        f"🔑 <b>Код гильдии для приглашения:</b>\n\n"
+        f"#{guild['id']}\n\n"
+        f"Поделись этим кодом — коллеги вступят через меню Гильдии → Вступить по коду.",
+        parse_mode="HTML", reply_markup=b.as_markup(),
+    )
+
+
 @router.callback_query(F.data == "game:guild_create")
 async def game_guild_create_start(callback: CallbackQuery, state: FSMContext):
     if callback.from_user.id not in ADMIN_IDS:
@@ -3857,7 +3881,7 @@ async def game_guild_name_input(message: Message, state: FSMContext):
     await message.answer(f"Название: <b>{name}</b>\n\nВыбери эмодзи для гильдии:", parse_mode="HTML", reply_markup=b.as_markup())
 
 
-@router.callback_query(F.data.startswith("game:guild_emoji:"))
+@router.callback_query(GuildState.entering_emoji, F.data.startswith("game:guild_emoji:"))
 async def game_guild_emoji_input(callback: CallbackQuery, state: FSMContext):
     if callback.from_user.id not in ADMIN_IDS:
         await callback.answer()
