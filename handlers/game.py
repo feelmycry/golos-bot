@@ -32,6 +32,15 @@ from services.db import (
     game_claim_daily_reward,
     game_get_leaderboard,
     game_get_player_rank,
+    game_get_achievements,
+    game_grant_achievement,
+    game_add_weekly_xp,
+    game_get_weekly_leaderboard,
+    game_get_weekly_rank,
+    game_get_my_weekly_xp,
+    game_get_completed_scenarios,
+    game_save_scenario_result,
+    game_get_streak_reminder_users,
 )
 from states.game import GameState
 
@@ -126,11 +135,14 @@ def _time_until_reset() -> str:
     return f"{h}ч {m}мин"
 
 
-def _stock_price(loc_id: str, base: int, for_date: date | None = None) -> int:
+def _stock_price(loc_id: str, base: int, for_date: date | None = None, apply_event: bool = True) -> int:
     d = for_date or date.today()
     h = int(hashlib.sha256(f"{d.isoformat()}:{loc_id}".encode()).hexdigest()[:8], 16)
     pct = 85 + (h % 31)  # 85%–115% от базы
-    return max(1, int(base * pct / 100))
+    price = max(1, int(base * pct / 100))
+    if apply_event and for_date is None:
+        price = max(1, int(price * _get_event_modifier(loc_id)))
+    return price
 
 
 def _stock_info(loc_id: str) -> tuple[int, float]:
@@ -152,6 +164,354 @@ FUTURE_LOCATIONS = [
     {"name": "НОРНИКЕЛЬ-СИТИ",    "emoji": "🏗️", "sector": "Цветная металлургия",  "min_level": 20},
     {"name": "РОСНЕФТЬ-АРЕНА",    "emoji": "🔴", "sector": "Нефть и газ",          "min_level": 25},
 ]
+
+# ── Достижения ───────────────────────────────────────────────────────────────
+
+ACHIEVEMENTS: dict[str, dict] = {
+    "first_quest":  {"name": "Первый шаг",      "emoji": "🌱", "desc": "Пройди первый квест",              "coins": 100,  "xp": 50,   "type": "quests_total",   "target": 1},
+    "quests_10":    {"name": "Разогрев",         "emoji": "🔥", "desc": "10 квестов пройдено",             "coins": 200,  "xp": 100,  "type": "quests_total",   "target": 10},
+    "quests_30":    {"name": "Аналитик",         "emoji": "📊", "desc": "30 квестов пройдено",             "coins": 500,  "xp": 250,  "type": "quests_total",   "target": 30},
+    "quests_60":    {"name": "Стратег",          "emoji": "🧠", "desc": "60 квестов пройдено",             "coins": 1000, "xp": 500,  "type": "quests_total",   "target": 60},
+    "quests_all":   {"name": "Легенда рынка",    "emoji": "🦅", "desc": "Все квесты пройдены",             "coins": 3000, "xp": 1500, "type": "quests_total",   "target": 90},
+    "streak_7":     {"name": "Неделя",           "emoji": "📅", "desc": "7 дней серии",                    "coins": 150,  "xp": 75,   "type": "streak",         "target": 7},
+    "streak_30":    {"name": "Месяц",            "emoji": "🌙", "desc": "30 дней серии",                   "coins": 1000, "xp": 500,  "type": "streak",         "target": 30},
+    "first_stock":  {"name": "Инвестор",         "emoji": "💹", "desc": "Купи первую акцию на бирже",      "coins": 200,  "xp": 100,  "type": "stocks_owned",   "target": 1},
+    "diversify":    {"name": "Диверсификация",   "emoji": "🎯", "desc": "Владей акциями 3 компаний",       "coins": 500,  "xp": 200,  "type": "companies_owned","target": 3},
+    "rich":         {"name": "Богач",            "emoji": "💰", "desc": "Накопи 10 000 ИР",                "coins": 500,  "xp": 200,  "type": "coins",          "target": 10000},
+    "level_5":      {"name": "Ученик",           "emoji": "📚", "desc": "Достигни уровня 5",               "coins": 300,  "xp": 0,    "type": "level",          "target": 5},
+    "level_10":     {"name": "Эксперт",          "emoji": "🎓", "desc": "Достигни уровня 10",              "coins": 1000, "xp": 0,    "type": "level",          "target": 10},
+    "scenario_1":   {"name": "Продавец",         "emoji": "🤝", "desc": "Пройди первый сценарий продаж",   "coins": 200,  "xp": 100,  "type": "scenarios_done", "target": 1},
+    "scenario_all": {"name": "Мастер продаж",    "emoji": "🏆", "desc": "Пройди все сценарии",             "coins": 2000, "xp": 1000, "type": "scenarios_done", "target": 15},
+    "daily_3":      {"name": "Дисциплина",       "emoji": "✅", "desc": "Выполни все 3 задания дня",       "coins": 300,  "xp": 150,  "type": "daily_claimed",  "target": 3},
+}
+
+
+# ── Рыночные события ──────────────────────────────────────────────────────────
+
+MARKET_EVENTS: list[dict] = [
+    {"id": "sber_dividend",    "company": "sber",    "text": "💌 Сбер объявил дивиденды выше ожиданий",               "modifier": 1.10, "emoji": "📈"},
+    {"id": "sber_rate_up",     "company": "sber",    "text": "⚡ ЦБ повысил ключевую ставку — банковский сектор под давлением", "modifier": 0.92, "emoji": "📉"},
+    {"id": "sber_ai",          "company": "sber",    "text": "🤖 Сбер представил нейросеть нового поколения",          "modifier": 1.08, "emoji": "📈"},
+    {"id": "lukoil_oil_up",    "company": "lukoil",  "text": "🛢️ Нефть Brent выросла до $95 — нефтяники в плюсе",     "modifier": 1.12, "emoji": "📈"},
+    {"id": "lukoil_oil_down",  "company": "lukoil",  "text": "📦 ОПЕК+ увеличивает добычу — нефть дешевеет",           "modifier": 0.90, "emoji": "📉"},
+    {"id": "lukoil_buyback",   "company": "lukoil",  "text": "💰 Лукойл объявил о выкупе акций (buyback)",             "modifier": 1.07, "emoji": "📈"},
+    {"id": "gazprom_gas_up",   "company": "gazprom", "text": "⚡ Цены на газ в Азии бьют рекорды",                     "modifier": 1.09, "emoji": "📈"},
+    {"id": "gazprom_route",    "company": "gazprom", "text": "🔵 Сила Сибири вышла на максимальную мощность",          "modifier": 1.06, "emoji": "📈"},
+    {"id": "gazprom_ndpi",     "company": "gazprom", "text": "💸 Государство повысило НДПИ для Газпрома",              "modifier": 0.88, "emoji": "📉"},
+    {"id": "yandex_results",   "company": "yandex",  "text": "🟡 Яндекс показал рост выручки +35% — выше прогноза",   "modifier": 1.13, "emoji": "📈"},
+    {"id": "yandex_gpt",       "company": "yandex",  "text": "🤖 YandexGPT 4.0 вышел — технологический ажиотаж",      "modifier": 1.08, "emoji": "📈"},
+    {"id": "yandex_rival",     "company": "yandex",  "text": "⚔️ Конкурент запустил альтернативный поиск",             "modifier": 0.94, "emoji": "📉"},
+    {"id": "magnit_inflation", "company": "magnit",  "text": "🛒 Инфляция 8% — трафик в дискаунтеры растёт",          "modifier": 1.07, "emoji": "📈"},
+    {"id": "magnit_lfl",       "company": "magnit",  "text": "📊 LFL Магнита +12% — рекорд квартала",                 "modifier": 1.09, "emoji": "📈"},
+    {"id": "magnit_rival",     "company": "magnit",  "text": "🏪 Wildberries открывает продуктовые магазины",          "modifier": 0.93, "emoji": "📉"},
+    {"id": "novatek_tanker",   "company": "novatek", "text": "❄️ Новый арктический танкер принят в эксплуатацию",     "modifier": 1.11, "emoji": "📈"},
+    {"id": "novatek_china",    "company": "novatek", "text": "🇨🇳 НОВАТЭК подписал 15-летний контракт с Китаем",       "modifier": 1.10, "emoji": "📈"},
+    {"id": "novatek_sanction", "company": "novatek", "text": "🚫 Новые санкции против арктических СПГ-проектов",       "modifier": 0.87, "emoji": "📉"},
+]
+
+
+def _get_today_events() -> list[dict]:
+    """Детерминированно выбирает 2 рыночных события на сегодня."""
+    h = int(hashlib.sha256(f"events:{date.today().isoformat()}".encode()).hexdigest()[:8], 16)
+    import random
+    rng = random.Random(h)
+    return rng.sample(MARKET_EVENTS, 2)
+
+
+def _get_event_modifier(loc_id: str) -> float:
+    """Возвращает множитель цены акции с учётом рыночного события."""
+    for ev in _get_today_events():
+        if ev["company"] == loc_id:
+            return ev["modifier"]
+    return 1.0
+
+
+# ── Сценарии продаж ──────────────────────────────────────────────────────────
+
+SALES_SCENARIOS: list[dict] = [
+    # ── НСЖ ──
+    {
+        "id": "nszh_vs_deposit", "product": "НСЖ",
+        "title": "НСЖ vs депозит",
+        "client": "👩 Клиент (45 лет, менеджер):",
+        "objection": "«Зачем мне НСЖ? Лучше просто положу деньги на депозит — там всё понятно и без рисков.»",
+        "options": [
+            "«Депозит — хороший выбор, но НСЖ сочетает накопление И страховую защиту семьи в одном продукте.»",
+            "«Депозит — это прошлый век. НСЖ приносит больше дохода.»",
+            "«Вы правы, депозит проще. Но давайте я всё равно расскажу про НСЖ на всякий случай.»",
+        ],
+        "correct": 0,
+        "explanation": "Правильный ответ — подчеркнуть уникальное сочетание функций НСЖ: накопление + страховая защита. Депозит не защищает семью при потере кормильца. Нельзя обесценивать депозит или навязывать продукт без учёта потребности.",
+        "xp": 200, "coins": 150,
+    },
+    {
+        "id": "nszh_early_exit", "product": "НСЖ",
+        "title": "Страх досрочного расторжения",
+        "client": "👨 Клиент (38 лет, предприниматель):",
+        "objection": "«А что если мне понадобятся деньги раньше срока? Я слышал, при расторжении теряешь всё.»",
+        "options": [
+            "«Нет, не всё — вы получаете выкупную сумму. Но главное: НСЖ создаёт защищённый резерв, который сложнее потратить импульсивно.»",
+            "«Да, это риск. Поэтому инвестируйте только деньги, которые точно не понадобятся.»",
+            "«Не переживайте, можете расторгнуть в любой момент без потерь.»",
+        ],
+        "correct": 0,
+        "explanation": "Нужно честно объяснить механику выкупной суммы И переформулировать «минус» в плюс: долгосрочная дисциплина — это цель. Нельзя вводить клиента в заблуждение или запугивать его.",
+        "xp": 180, "coins": 130,
+    },
+    {
+        "id": "nszh_insurance", "product": "НСЖ",
+        "title": "«Страховка мне не нужна»",
+        "client": "👨 Клиент (52 года, госслужащий):",
+        "objection": "«Я здоровый человек, страховка — пустая трата денег. Мне нужно просто накопить.»",
+        "options": [
+            "«Именно так многие думают до того момента, пока страховой случай не происходит. Страховка в НСЖ — это гарантия, что накопления достигнут цели даже при форс-мажоре.»",
+            "«Тогда давайте посмотрим ОПИФ — там нет страховки и чистое накопление.»",
+            "«Страховка занимает небольшую часть взноса, можно её не учитывать.»",
+        ],
+        "correct": 0,
+        "explanation": "Страховая составляющая — не просто расход, а защита цели накопления. Если уйти на ОПИФ без выявления ценности страхования, клиент не получит подходящий продукт. Недооценивать страховку тоже нельзя.",
+        "xp": 170, "coins": 120,
+    },
+    # ── ПДС ──
+    {
+        "id": "pds_deduction", "product": "ПДС",
+        "title": "Налоговый вычет по ПДС",
+        "client": "👩 Клиент (41 год, врач):",
+        "objection": "«Я слышала про налоговый вычет, но не понимаю как это работает. Это реально выгодно?»",
+        "options": [
+            "«Да! Государство возвращает 13% от взноса до 400 000 руб/год — это до 52 000 рублей живыми деньгами ежегодно. Плюс работодатель может добавлять взносы.»",
+            "«Вычет есть, но он небольшой — всего 13%. Главная ценность ПДС в другом.»",
+            "«Вычет получить сложно, нужно подавать декларацию. Давайте лучше обсудим другие продукты.»",
+        ],
+        "correct": 0,
+        "explanation": "Налоговый вычет — одно из главных преимуществ ПДС. Нужно говорить конкретными цифрами: до 52 000 руб/год — это мощный аргумент. Занижать выгоду или усложнять нельзя.",
+        "xp": 190, "coins": 140,
+    },
+    {
+        "id": "pds_lock", "product": "ПДС",
+        "title": "«15 лет — слишком долго»",
+        "client": "👨 Клиент (35 лет, инженер):",
+        "objection": "«Что значит 15 лет? Я не хочу замораживать деньги на такой срок.»",
+        "options": [
+            "«Понимаю. Именно поэтому ПДС подходит для пенсионного горизонта — а параллельно можно держать ликвидные инструменты для текущих задач. Это не все деньги, а часть долгосрочного плана.»",
+            "«15 лет — это минимум, зато потом получите большую сумму.»",
+            "«Можно выйти раньше, просто потеряете часть государственного взноса.»",
+        ],
+        "correct": 0,
+        "explanation": "Долгосрочность — особенность, а не недостаток. Нужно вписать ПДС в общий финансовый план клиента, где есть и ликвидные инструменты. Нельзя замалчивать ограничения и нельзя пугать клиента.",
+        "xp": 185, "coins": 135,
+    },
+    {
+        "id": "pds_vs_npf", "product": "ПДС",
+        "title": "ПДС vs НПФ",
+        "client": "👩 Клиент (48 лет, бухгалтер):",
+        "objection": "«Чем ПДС отличается от обычного НПФ? Зачем платить банку, если НПФ тоже копит на пенсию?»",
+        "options": [
+            "«ПДС отличается государственным софинансированием до 36 000 руб/год и налоговым вычетом — это прямые государственные деньги, которых нет в классическом НПФ.»",
+            "«НПФ и ПДС — практически одно и то же, разница только в названии.»",
+            "«НПФ более надёжен, у нас ПДС — это скорее дополнение.»",
+        ],
+        "correct": 0,
+        "explanation": "Ключевое преимущество ПДС — государственное софинансирование и вычет. Это прямая дополнительная доходность, которой нет в стандартном НПФ. Нельзя приравнивать или занижать продукт.",
+        "xp": 195, "coins": 145,
+    },
+    # ── ОПИФ ──
+    {
+        "id": "opif_risk", "product": "ОПИФ",
+        "title": "«Это же риски»",
+        "client": "👨 Клиент (30 лет, программист):",
+        "objection": "«ОПИФ — это же как акции, можно потерять всё. Я не готов к такому риску.»",
+        "options": [
+            "«ОПИФ диверсифицирован по десяткам бумаг, и управляет им профессиональный команда. Риск есть, но он меньше чем у отдельных акций. Давайте подберём фонд под ваш профиль риска.»",
+            "«Совершенно верно, риски высокие. Давайте лучше рассмотрим депозит.»",
+            "«ОПИФ абсолютно надёжен — управляющая компания гарантирует доход.»",
+        ],
+        "correct": 0,
+        "explanation": "Нужно корректно объяснить диверсификацию и роль профессионального управления — это снижает риск по сравнению с самостоятельными инвестициями. Нельзя гарантировать доход или уходить к другому продукту без работы с возражением.",
+        "xp": 175, "coins": 125,
+    },
+    {
+        "id": "opif_when_sell", "product": "ОПИФ",
+        "title": "«Когда продавать?»",
+        "client": "👩 Клиент (44 года, учитель):",
+        "objection": "«Окей, купила паи. А когда мне их продавать? Как понять что пора?»",
+        "options": [
+            "«Ориентируйтесь на цель, а не на рыночный момент. Если копите на квартиру через 5 лет — выходить когда цель достигнута, а не пытаться поймать пик.»",
+            "«Продавайте когда рынок вырос на 15-20% — это хорошая доходность.»",
+            "«Я не могу давать советы о моменте продажи — это на ваше усмотрение.»",
+        ],
+        "correct": 0,
+        "explanation": "Правильный подход — привязка к цели клиента, а не к рыночному тайминию. Попытки угадать пик — типичная ошибка. Отказ от рекомендации тоже плохой ответ — клиент ждёт помощи.",
+        "xp": 180, "coins": 130,
+    },
+    {
+        "id": "opif_min_entry", "product": "ОПИФ",
+        "title": "«Сколько нужно для входа?»",
+        "client": "👨 Клиент (25 лет, студент):",
+        "objection": "«Хочу начать инвестировать, но у меня только 5 000 рублей. ОПИФ вообще мне подходит?»",
+        "options": [
+            "«Отлично! Многие ОПИФы начинаются от 1 000 рублей, и важно начать с любой суммы. Регулярные небольшие взносы — лучшая стратегия на длинном горизонте.»",
+            "«5 000 — маловато для инвестиций. Лучше накопите побольше сначала.»",
+            "«Минимальный вход — 100 000 рублей, вам пока не подходит.»",
+        ],
+        "correct": 0,
+        "explanation": "Молодой инвестор с небольшой суммой — ценный долгосрочный клиент. Нельзя отговаривать от инвестиций или давать неверную информацию о пороге входа. Регулярные небольшие взносы — классическая стратегия DCA.",
+        "xp": 165, "coins": 115,
+    },
+    # ── ОМС ──
+    {
+        "id": "oms_physical", "product": "ОМС",
+        "title": "«Хочу физическое золото»",
+        "client": "👩 Клиент (60 лет, пенсионер):",
+        "objection": "«Я хочу настоящее золото в руках держать, а не какой-то счёт на бумаге.»",
+        "options": [
+            "«Понимаю желание. ОМС — это золото без физических проблем: нет НДС (18% при покупке слитка!), нет расходов на хранение и страховку, легко купить и продать. Реальный металл обойдётся значительно дороже.»",
+            "«Тогда вам лучше сходить в ювелирный магазин.»",
+            "«Физическое золото и ОМС — одно и то же, только ОМС удобнее.»",
+        ],
+        "correct": 0,
+        "explanation": "НДС 18% при покупке физических слитков — мощный аргумент в пользу ОМС. Плюс хранение, страховка, сложность продажи. Нельзя отправлять клиента к конкурентам или давать неверную информацию о физическом металле.",
+        "xp": 185, "coins": 135,
+    },
+    {
+        "id": "oms_volatility", "product": "ОМС",
+        "title": "«Золото нестабильно»",
+        "client": "👨 Клиент (50 лет, директор):",
+        "objection": "«Я видел как золото падало на 20% за год. Это не защита, это спекуляция.»",
+        "options": [
+            "«Золото — защита от системных рисков: девальвации, инфляции, геополитики. Краткосрочная волатильность есть, но на горизонте 5-10 лет золото сохраняет покупательную способность. Это 5-15% портфеля, не всё.»",
+            "«Вы абсолютно правы, золото непредсказуемо. Давайте рассмотрим депозит.»",
+            "«Это было давно. Сейчас золото стабильно растёт.»",
+        ],
+        "correct": 0,
+        "explanation": "Нужно объяснить роль золота в портфеле: защитный актив, диверсификатор, а не спекулятивный инструмент. Оптимальная доля — 5-15%. Нельзя отрицать риски или уходить к другому продукту без работы с возражением.",
+        "xp": 190, "coins": 140,
+    },
+    {
+        "id": "oms_nds", "product": "ОМС",
+        "title": "Вопрос про НДС",
+        "client": "👩 Клиент (37 лет, финансист):",
+        "objection": "«Я читала, что при покупке слитков берут НДС, а при ОМС — нет. Это точно так?»",
+        "options": [
+            "«Совершенно верно! НДС 20% при покупке физического золота в слитках отменён в 2022 году. Но ОМС всё равно выгоднее: нет расходов на хранение, страховку, нет спреда ювелира, мгновенная ликвидность.»",
+            "«Да, НДС нет ни там ни там. ОМС просто удобнее.»",
+            "«НДС при слитках 18%. ОМС полностью освобождён от налогов.»",
+        ],
+        "correct": 0,
+        "explanation": "НДС на слитки отменён в 2022 году — важно знать актуальные данные. Нужно скорректировать клиента и продолжить аргументацию ОМС через удобство и отсутствие скрытых расходов. Неактуальная информация о налогах подрывает доверие.",
+        "xp": 200, "coins": 150,
+    },
+    # ── Автоследование ──
+    {
+        "id": "auto_who_manages", "product": "Автоследование",
+        "title": "«Кто управляет деньгами?»",
+        "client": "👨 Клиент (33 года, маркетолог):",
+        "objection": "«Автоследование — это значит робот торгует? Или живой человек? Я хочу понимать кто принимает решения.»",
+        "options": [
+            "«Стратегией управляет реальный профессиональный трейдер с публичной историей сделок. Вы можете посмотреть его статистику и выбрать среди нескольких авторов с разным стилем торговли.»",
+            "«Это алгоритм — он не делает эмоциональных ошибок, поэтому лучше человека.»",
+            "«Управляет банк, надёжно и под регулятором.»",
+        ],
+        "correct": 0,
+        "explanation": "Ключевое преимущество автоследования — прозрачность: публичная история автора, проверяемая статистика. Нельзя выдавать алгоритм за живого человека или наоборот, а также приписывать управление банку.",
+        "xp": 175, "coins": 125,
+    },
+    {
+        "id": "auto_commission", "product": "Автоследование",
+        "title": "«Какие комиссии?»",
+        "client": "👩 Клиент (42 года, врач):",
+        "objection": "«Я посчитала: комиссия автора + комиссия брокера + налоги съедают всю прибыль. Зачем это?»",
+        "options": [
+            "«Давайте посчитаем вместе на конкретной стратегии. Если автор показывает 25% годовых, после всех комиссий ~15-18% — это всё равно значительно выше депозита. Ключевой вопрос — выбор стратегии с нужным соотношением доходность/комиссия.»",
+            "«Комиссии небольшие, не стоит на них акцентировать.»",
+            "«Вы правы, это дорого. Лучше самостоятельно торговать акциями.»",
+        ],
+        "correct": 0,
+        "explanation": "Нужно считать реальный финансовый результат, а не отмахиваться от возражения. Клиент с калькулятором — это хороший клиент. Нельзя занижать комиссии или отговаривать от продукта.",
+        "xp": 200, "coins": 150,
+    },
+    {
+        "id": "auto_vs_opif", "product": "Автоследование",
+        "title": "Автоследование vs ОПИФ",
+        "client": "👨 Клиент (28 лет, аналитик):",
+        "objection": "«Чем автоследование лучше ОПИФ? Оба управляются профессионалами, зачем переплачивать?»",
+        "options": [
+            "«Главное отличие — прозрачность и контроль. В автоследовании вы видите каждую сделку в реальном времени, можете выбрать конкретного автора, выйти когда угодно. ОПИФ — 'чёрный ящик' с ограниченной ликвидностью.»",
+            "«ОПИФ надёжнее — он регулируется. Автоследование для тех, кто любит риск.»",
+            "«По сути одно и то же, выбирайте что нравится.»",
+        ],
+        "correct": 0,
+        "explanation": "Ключевые отличия: прозрачность каждой сделки, выбор конкретного автора, ликвидность. ОПИФ более регулируем, но менее прозрачен. Нельзя упрощать до 'одно и то же' или запугивать клиента риском.",
+        "xp": 190, "coins": 140,
+    },
+]
+
+
+# ── Helpers для достижений ────────────────────────────────────────────────────
+
+async def _check_and_grant_achievements(
+    user_id: int,
+    player: dict,
+    loc_progress: dict,
+    completed_quests: set,
+    scenarios_done: set,
+    today_daily: dict,
+) -> list[dict]:
+    """Проверяет все достижения и выдаёт новые. Возвращает список новых достижений."""
+    earned = await game_get_achievements(user_id)
+    new_ones = []
+    level = parse_level(player["xp"])[0]
+    streak = player.get("streak_days", 0) or 0
+    coins = player.get("coins", 0)
+    total_shares = sum(p.get("shares", 0) for p in loc_progress.values())
+    companies_with_shares = sum(1 for p in loc_progress.values() if p.get("shares", 0) > 0)
+    quests_done = len(completed_quests)
+    daily_claimed = sum(1 for p in today_daily.values() if p.get("claimed", 0))
+
+    checks = {
+        "first_quest":  quests_done >= 1,
+        "quests_10":    quests_done >= 10,
+        "quests_30":    quests_done >= 30,
+        "quests_60":    quests_done >= 60,
+        "quests_all":   quests_done >= 90,
+        "streak_7":     streak >= 7,
+        "streak_30":    streak >= 30,
+        "first_stock":  total_shares >= 1,
+        "diversify":    companies_with_shares >= 3,
+        "rich":         coins >= 10000,
+        "level_5":      level >= 5,
+        "level_10":     level >= 10,
+        "scenario_1":   len(scenarios_done) >= 1,
+        "scenario_all": len(scenarios_done) >= 15,
+        "daily_3":      daily_claimed >= 3,
+    }
+
+    for ach_id, condition in checks.items():
+        if condition and ach_id not in earned:
+            is_new = await game_grant_achievement(user_id, ach_id)
+            if is_new:
+                ach = ACHIEVEMENTS[ach_id]
+                from services.db import game_add_weekly_xp
+                from datetime import date as _date
+                week_start = (_date.today() - timedelta(days=_date.today().weekday())).isoformat()
+                if ach["xp"] > 0:
+                    await game_add_weekly_xp(user_id, week_start, ach["xp"])
+                async with __import__('aiosqlite').connect(__import__('config').DB_PATH) as db:
+                    await db.execute(
+                        "UPDATE game_players SET coins = coins + ?, xp = xp + ? WHERE user_id = ?",
+                        (ach["coins"], ach["xp"], user_id),
+                    )
+                    await db.commit()
+                new_ones.append(ach)
+    return new_ones
+
+
+# ── Текущая неделя ────────────────────────────────────────────────────────────
+
+def _current_week_start() -> str:
+    today = date.today()
+    return (today - timedelta(days=today.weekday())).isoformat()
+
 
 # ── Локации и квесты ──────────────────────────────────────────────────────────
 
@@ -1655,9 +2015,11 @@ def _game_main_kb() -> object:
     b.button(text="🛒 Магазин",           callback_data="game:shop")
     b.button(text="📅 Задания дня",       callback_data="game:daily")
     b.button(text="🏆 Рейтинг",           callback_data="game:leaderboard")
+    b.button(text="🎭 Сценарии продаж",   callback_data="game:scenarios")
+    b.button(text="🏅 Достижения",        callback_data="game:achievements")
     b.button(text="👤 Профиль",           callback_data="game:profile")
     b.button(text="◀️ Назад в меню",      callback_data="back_to_menu")
-    b.adjust(2, 2, 2, 1, 1)
+    b.adjust(2, 2, 2, 2, 1, 1)
     return b.as_markup()
 
 
@@ -1768,6 +2130,9 @@ async def game_open(callback: CallbackQuery, state: FSMContext):
             parts.append(f"⚡ Бустов XP: {boosts}")
         inv_line = "\n" + " · ".join(parts)
 
+    events = _get_today_events()
+    events_line = "\n".join(f"  {ev['emoji']} {ev['text']}" for ev in events)
+
     text = (
         f"🎮 <b>ИНВЕСТОР: ВОСХОЖДЕНИЕ</b>\n"
         f"<i>Стань легендой фондового рынка России</i>\n\n"
@@ -1776,6 +2141,7 @@ async def game_open(callback: CallbackQuery, state: FSMContext):
         f"💰 ИнвестРубли: <b>{player['coins']:,}</b>"
         f"{streak_label(streak)}"
         f"{inv_line}\n\n"
+        f"📰 <b>События дня:</b>\n{events_line}\n\n"
         f"Выбери действие:"
     )
     await callback.message.edit_text(text, parse_mode="HTML", reply_markup=_game_main_kb())
@@ -2018,12 +2384,33 @@ async def game_answer(callback: CallbackQuery, state: FSMContext):
         result_header = "❌ <b>Неверно.</b>"
         reward_line = ""
 
+    week_start = _current_week_start()
+    if is_correct and not already_done and xp_gained > 0:
+        await game_add_weekly_xp(callback.from_user.id, week_start, xp_gained)
+
+    new_achievements = []
+    if is_correct:
+        player_final = await game_get_or_create_player(callback.from_user.id)
+        loc_prog = await game_get_location_progress(callback.from_user.id)
+        completed_final = await game_get_completed_quests(callback.from_user.id)
+        scenarios_done = await game_get_completed_scenarios(callback.from_user.id)
+        today_daily = await game_get_daily_progress(callback.from_user.id, today_str)
+        new_achievements = await _check_and_grant_achievements(
+            callback.from_user.id, player_final, loc_prog, completed_final, scenarios_done, today_daily
+        )
+
+    ach_text = ""
+    if new_achievements:
+        ach_lines = "\n".join(f"  {a['emoji']} <b>{a['name']}</b> +{a['coins']} ИР" for a in new_achievements)
+        ach_text = f"\n\n🏅 <b>Новые достижения!</b>\n{ach_lines}"
+
     text = (
         f"{loc['emoji']} <b>{loc['name']}</b> › {html.escape(quest['title'])}\n\n"
         f"{opts}\n\n"
         f"{result_header}{reward_line}\n\n"
         f"💡 <b>Объяснение:</b>\n{html.escape(quest['explanation'])}"
-        f"{level_up_text}\n\n"
+        f"{level_up_text}"
+        f"{ach_text}\n\n"
         f"📊 Уровень {level_after} | XP {xp_in}/{xp_need}"
     )
 
@@ -2501,7 +2888,241 @@ async def game_leaderboard(callback: CallbackQuery):
         lines.append(f"\n📍 Вы в топ-15 — место #{my_rank}")
 
     b = InlineKeyboardBuilder()
+    b.button(text="⚡ Недельный турнир", callback_data="game:leaderboard:weekly")
+    b.button(text="◀️ Назад", callback_data="game:open")
+    b.adjust(1)
+
+    await callback.message.edit_text("\n".join(lines), parse_mode="HTML", reply_markup=b.as_markup())
+    await callback.answer()
+
+
+@router.callback_query(F.data == "game:leaderboard:weekly")
+async def game_leaderboard_weekly(callback: CallbackQuery):
+    if callback.from_user.id not in ADMIN_IDS:
+        await callback.answer()
+        return
+
+    week_start = _current_week_start()
+    top = await game_get_weekly_leaderboard(week_start, 15)
+    my_xp = await game_get_my_weekly_xp(callback.from_user.id, week_start)
+    my_rank = await game_get_weekly_rank(callback.from_user.id, week_start)
+
+    medals = {1: "🥇", 2: "🥈", 3: "🥉"}
+    lines = [
+        "⚡ <b>НЕДЕЛЬНЫЙ ТУРНИР</b>",
+        f"<i>Сброс в понедельник · Топ-3 получают бонус!</i>\n",
+    ]
+
+    for i, row in enumerate(top, 1):
+        medal = medals.get(i, f"{i}.")
+        name = html.escape(row.get("first_name") or "Игрок")
+        lines.append(f"{medal} <b>{name}</b>  {row['xp_gained']:,} XP за неделю")
+
+    if not top:
+        lines.append("<i>Пока никто не набрал XP на этой неделе. Будь первым!</i>")
+
+    lines.append(f"\n📍 Ваш XP за неделю: <b>{my_xp:,}</b>  (место #{my_rank})")
+
+    b = InlineKeyboardBuilder()
+    b.button(text="🏆 Общий рейтинг", callback_data="game:leaderboard")
+    b.button(text="◀️ Назад", callback_data="game:open")
+    b.adjust(1)
+
+    await callback.message.edit_text("\n".join(lines), parse_mode="HTML", reply_markup=b.as_markup())
+    await callback.answer()
+
+
+# ── Достижения ────────────────────────────────────────────────────────────────
+
+@router.callback_query(F.data == "game:achievements")
+async def game_achievements(callback: CallbackQuery):
+    if callback.from_user.id not in ADMIN_IDS:
+        await callback.answer()
+        return
+
+    earned = await game_get_achievements(callback.from_user.id)
+    total = len(ACHIEVEMENTS)
+    done = len(earned)
+
+    lines = [f"🏅 <b>ДОСТИЖЕНИЯ</b>  {done}/{total}\n"]
+
+    for ach_id, ach in ACHIEVEMENTS.items():
+        if ach_id in earned:
+            lines.append(f"✅ {ach['emoji']} <b>{ach['name']}</b>\n   <i>{ach['desc']}</i>")
+        else:
+            lines.append(f"🔒 <b>{ach['name']}</b>\n   <i>{ach['desc']}</i>  (+{ach['coins']} ИР)")
+
+    b = InlineKeyboardBuilder()
     b.button(text="◀️ Назад", callback_data="game:open")
 
     await callback.message.edit_text("\n".join(lines), parse_mode="HTML", reply_markup=b.as_markup())
     await callback.answer()
+
+
+# ── Сценарии продаж ───────────────────────────────────────────────────────────
+
+@router.callback_query(F.data == "game:scenarios")
+async def game_scenarios(callback: CallbackQuery):
+    if callback.from_user.id not in ADMIN_IDS:
+        await callback.answer()
+        return
+
+    completed = await game_get_completed_scenarios(callback.from_user.id)
+    products: dict[str, list] = {}
+    for sc in SALES_SCENARIOS:
+        products.setdefault(sc["product"], []).append(sc)
+
+    lines = [
+        "🎭 <b>СЦЕНАРИИ ПРОДАЖ</b>\n",
+        "<i>Отработай реальные возражения клиентов. Каждый правильный ответ — монеты и XP.</i>\n",
+    ]
+
+    b = InlineKeyboardBuilder()
+    for product, scenarios in products.items():
+        done = sum(1 for s in scenarios if s["id"] in completed)
+        lines.append(f"<b>{product}</b>: {done}/{len(scenarios)}")
+        for sc in scenarios:
+            status = "✅" if sc["id"] in completed else "💬"
+            b.button(
+                text=f"{status} {sc['title']} [{sc['product']}]",
+                callback_data=f"game:scenario:{sc['id']}",
+            )
+
+    b.button(text="◀️ Назад", callback_data="game:open")
+    b.adjust(1)
+
+    await callback.message.edit_text("\n".join(lines), parse_mode="HTML", reply_markup=b.as_markup())
+    await callback.answer()
+
+
+@router.callback_query(F.data.startswith("game:scenario:") & ~F.data.startswith("game:scenario:answer:"))
+async def game_scenario_show(callback: CallbackQuery, state: FSMContext):
+    if callback.from_user.id not in ADMIN_IDS:
+        await callback.answer()
+        return
+
+    sc_id = callback.data[len("game:scenario:"):]
+    sc = next((s for s in SALES_SCENARIOS if s["id"] == sc_id), None)
+    if not sc:
+        await callback.answer("Сценарий не найден", show_alert=True)
+        return
+
+    completed = await game_get_completed_scenarios(callback.from_user.id)
+    already_done = sc_id in completed
+    done_line = "\n\n✅ <i>Уже пройден. Можешь потренироваться снова (без награды).</i>" if already_done else ""
+
+    options_text = "\n".join(f"{_NUM[i]} {html.escape(opt)}" for i, opt in enumerate(sc["options"]))
+
+    text = (
+        f"🎭 <b>{sc['title']}</b>  [{sc['product']}]\n\n"
+        f"{sc['client']}\n"
+        f"<i>«{html.escape(sc['objection'])}»</i>\n\n"
+        f"<b>Как ответить?</b>\n{options_text}"
+        f"{done_line}"
+    )
+
+    b = InlineKeyboardBuilder()
+    for i in range(len(sc["options"])):
+        b.button(text=_NUM[i], callback_data=f"game:scenario:answer:{sc_id}:{i}")
+    b.button(text="◀️ К списку", callback_data="game:scenarios")
+    b.adjust(len(sc["options"]), 1)
+
+    await callback.message.edit_text(text, parse_mode="HTML", reply_markup=b.as_markup())
+    await state.update_data(scenario_id=sc_id)
+    await callback.answer()
+
+
+@router.callback_query(F.data.startswith("game:scenario:answer:"))
+async def game_scenario_answer(callback: CallbackQuery, state: FSMContext):
+    if callback.from_user.id not in ADMIN_IDS:
+        await callback.answer()
+        return
+
+    parts = callback.data.split(":")
+    sc_id, answer_idx = parts[3], int(parts[4])
+    sc = next((s for s in SALES_SCENARIOS if s["id"] == sc_id), None)
+    if not sc:
+        await callback.answer("Сценарий не найден", show_alert=True)
+        return
+
+    is_correct = answer_idx == sc["correct"]
+    completed = await game_get_completed_scenarios(callback.from_user.id)
+    already_done = sc_id in completed
+
+    xp_gained = sc["xp"] if (is_correct and not already_done) else 0
+    coins_gained = sc["coins"] if (is_correct and not already_done) else 0
+
+    if is_correct and not already_done:
+        await game_save_scenario_result(callback.from_user.id, sc_id, coins_gained, xp_gained)
+        await game_add_weekly_xp(callback.from_user.id, _current_week_start(), xp_gained)
+
+    options_text = "\n".join(
+        f"{'✅' if i == sc['correct'] else ('❌' if i == answer_idx else _NUM[i])} {html.escape(opt)}"
+        for i, opt in enumerate(sc["options"])
+    )
+
+    if is_correct:
+        result = "✅ <b>Верно!</b>"
+        reward = f"\n🎁 +{xp_gained} XP, +{coins_gained} ИР" if not already_done else "\n🔄 <i>Повтор — без награды</i>"
+    else:
+        result = "❌ <b>Неверный ответ.</b>"
+        reward = ""
+
+    new_achievements = []
+    if is_correct:
+        player = await game_get_or_create_player(callback.from_user.id)
+        loc_prog = await game_get_location_progress(callback.from_user.id)
+        quests_done = await game_get_completed_quests(callback.from_user.id)
+        scenarios_done = await game_get_completed_scenarios(callback.from_user.id)
+        today_daily = await game_get_daily_progress(callback.from_user.id, date.today().isoformat())
+        new_achievements = await _check_and_grant_achievements(
+            callback.from_user.id, player, loc_prog, quests_done, scenarios_done, today_daily
+        )
+
+    ach_text = ""
+    if new_achievements:
+        ach_lines = "\n".join(f"  {a['emoji']} <b>{a['name']}</b> +{a['coins']} ИР" for a in new_achievements)
+        ach_text = f"\n\n🏅 <b>Новые достижения!</b>\n{ach_lines}"
+
+    text = (
+        f"🎭 <b>{sc['title']}</b>  [{sc['product']}]\n\n"
+        f"{sc['client']}\n"
+        f"<i>«{html.escape(sc['objection'])}»</i>\n\n"
+        f"{options_text}\n\n"
+        f"{result}{reward}\n\n"
+        f"💡 <b>Разбор:</b>\n{html.escape(sc['explanation'])}"
+        f"{ach_text}"
+    )
+
+    b = InlineKeyboardBuilder()
+    b.button(text="◀️ К списку сценариев", callback_data="game:scenarios")
+    b.adjust(1)
+
+    await callback.message.edit_text(text, parse_mode="HTML", reply_markup=b.as_markup())
+    await state.clear()
+    await callback.answer("✅ Верно!" if is_correct else "❌ Неверно")
+
+
+# ── Фоновая задача: напоминание о серии ──────────────────────────────────────
+
+async def streak_reminder_task(bot) -> None:
+    import asyncio
+    while True:
+        await asyncio.sleep(3600)
+        try:
+            users = await game_get_streak_reminder_users()
+            for u in users:
+                hours_left = max(1, 24 - int(
+                    (datetime.utcnow() - datetime.fromisoformat(u["last_active"])).total_seconds() / 3600
+                ))
+                try:
+                    await bot.send_message(
+                        u["user_id"],
+                        f"🔥 <b>Твоя серия {u['streak_days']} дней сгорит примерно через {hours_left} ч!</b>\n\n"
+                        f"Зайди в игру — пройди хотя бы один квест чтобы сохранить серию.",
+                        parse_mode="HTML",
+                    )
+                except Exception:
+                    pass
+        except Exception:
+            pass

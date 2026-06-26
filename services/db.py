@@ -96,6 +96,30 @@ async def init_db() -> None:
                 PRIMARY KEY (user_id, date, task_id)
             )
         """)
+        await db.execute("""
+            CREATE TABLE IF NOT EXISTS game_achievements (
+                user_id        INTEGER NOT NULL,
+                achievement_id TEXT    NOT NULL,
+                earned_at      TEXT    DEFAULT CURRENT_TIMESTAMP,
+                PRIMARY KEY (user_id, achievement_id)
+            )
+        """)
+        await db.execute("""
+            CREATE TABLE IF NOT EXISTS game_weekly_xp (
+                user_id    INTEGER NOT NULL,
+                week_start TEXT    NOT NULL,
+                xp_gained  INTEGER DEFAULT 0,
+                PRIMARY KEY (user_id, week_start)
+            )
+        """)
+        await db.execute("""
+            CREATE TABLE IF NOT EXISTS game_scenario_log (
+                user_id     INTEGER NOT NULL,
+                scenario_id TEXT    NOT NULL,
+                played_at   TEXT    DEFAULT CURRENT_TIMESTAMP,
+                PRIMARY KEY (user_id, scenario_id)
+            )
+        """)
         await db.commit()
 
 
@@ -665,3 +689,121 @@ async def game_add_shop_item(user_id: int, item: str, cost: int) -> bool:
         )
         await db.commit()
         return True
+
+
+# ── Achievements ──────────────────────────────────────────────────────────────
+
+async def game_get_achievements(user_id: int) -> set[str]:
+    async with aiosqlite.connect(DB_PATH) as db:
+        cur = await db.execute(
+            "SELECT achievement_id FROM game_achievements WHERE user_id = ?", (user_id,)
+        )
+        return {row[0] for row in await cur.fetchall()}
+
+
+async def game_grant_achievement(user_id: int, achievement_id: str) -> bool:
+    """Returns True if this is a NEW achievement (not already earned)."""
+    async with aiosqlite.connect(DB_PATH) as db:
+        cur = await db.execute(
+            "SELECT 1 FROM game_achievements WHERE user_id = ? AND achievement_id = ?",
+            (user_id, achievement_id),
+        )
+        if await cur.fetchone():
+            return False
+        await db.execute(
+            "INSERT INTO game_achievements (user_id, achievement_id) VALUES (?, ?)",
+            (user_id, achievement_id),
+        )
+        await db.commit()
+        return True
+
+
+# ── Weekly XP ─────────────────────────────────────────────────────────────────
+
+async def game_add_weekly_xp(user_id: int, week_start: str, amount: int) -> None:
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.execute(
+            """INSERT INTO game_weekly_xp (user_id, week_start, xp_gained) VALUES (?, ?, ?)
+               ON CONFLICT(user_id, week_start) DO UPDATE SET xp_gained = xp_gained + excluded.xp_gained""",
+            (user_id, week_start, amount),
+        )
+        await db.commit()
+
+
+async def game_get_weekly_leaderboard(week_start: str, limit: int = 15) -> list[dict]:
+    async with aiosqlite.connect(DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        cur = await db.execute(
+            """SELECT u.first_name, w.user_id, w.xp_gained,
+                      COUNT(DISTINCT q.quest_id) AS quests_done
+               FROM game_weekly_xp w
+               JOIN users u ON w.user_id = u.telegram_id
+               LEFT JOIN game_quest_log q ON q.user_id = w.user_id
+               WHERE w.week_start = ? AND w.xp_gained > 0
+               GROUP BY w.user_id
+               ORDER BY w.xp_gained DESC
+               LIMIT ?""",
+            (week_start, limit),
+        )
+        return [dict(r) for r in await cur.fetchall()]
+
+
+async def game_get_weekly_rank(user_id: int, week_start: str) -> int:
+    async with aiosqlite.connect(DB_PATH) as db:
+        cur = await db.execute(
+            """SELECT COUNT(*) FROM game_weekly_xp
+               WHERE week_start = ? AND xp_gained > (
+                   SELECT COALESCE(xp_gained, 0) FROM game_weekly_xp
+                   WHERE user_id = ? AND week_start = ?
+               )""",
+            (week_start, user_id, week_start),
+        )
+        row = await cur.fetchone()
+        return (row[0] + 1) if row else 1
+
+
+async def game_get_my_weekly_xp(user_id: int, week_start: str) -> int:
+    async with aiosqlite.connect(DB_PATH) as db:
+        cur = await db.execute(
+            "SELECT xp_gained FROM game_weekly_xp WHERE user_id = ? AND week_start = ?",
+            (user_id, week_start),
+        )
+        row = await cur.fetchone()
+        return row[0] if row else 0
+
+
+# ── Scenarios ─────────────────────────────────────────────────────────────────
+
+async def game_get_completed_scenarios(user_id: int) -> set[str]:
+    async with aiosqlite.connect(DB_PATH) as db:
+        cur = await db.execute(
+            "SELECT scenario_id FROM game_scenario_log WHERE user_id = ?", (user_id,)
+        )
+        return {row[0] for row in await cur.fetchall()}
+
+
+async def game_save_scenario_result(user_id: int, scenario_id: str, coins: int, xp: int) -> None:
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.execute(
+            "INSERT OR REPLACE INTO game_scenario_log (user_id, scenario_id) VALUES (?, ?)",
+            (user_id, scenario_id),
+        )
+        await db.execute(
+            "UPDATE game_players SET coins = coins + ?, xp = xp + ? WHERE user_id = ?",
+            (coins, xp, user_id),
+        )
+        await db.commit()
+
+
+# ── Streak notification helpers ───────────────────────────────────────────────
+
+async def game_get_streak_reminder_users() -> list[dict]:
+    """Users with streak > 0 who haven't been active for 20-23 hours."""
+    async with aiosqlite.connect(DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        cur = await db.execute(
+            """SELECT user_id, streak_days, last_active FROM game_players
+               WHERE streak_days > 0 AND last_active IS NOT NULL
+               AND CAST((julianday('now') - julianday(last_active)) * 24 AS INTEGER) BETWEEN 20 AND 23"""
+        )
+        return [dict(r) for r in await cur.fetchall()]
