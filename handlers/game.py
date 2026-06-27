@@ -64,6 +64,7 @@ from services.db import (
     game_join_coop,
     game_get_coop,
     game_save_coop_answer,
+    game_set_onboarded,
 )
 from states.game import GameState, GuildState
 
@@ -2559,6 +2560,42 @@ WORLD_LOCATIONS: dict[str, dict] = {
     },
 }
 
+_HOWTOPLAY_TEXT = (
+    "📖 <b>КАК ИГРАТЬ — ПОЛНЫЙ ГАЙД</b>\n\n"
+
+    "🎯 <b>Цель игры</b>\n"
+    "Стать легендой фондового рынка, прокачивая знания об инвестициях и продажах через квесты, дуэли и командные задания.\n\n"
+
+    "💰 <b>ИнвестРубли (ИР)</b>\n"
+    "Внутренняя валюта игры:\n"
+    "• Зарабатываешь за правильные ответы на квесты\n"
+    "• Тратишь в 🛒 Магазине на подсказки и XP-бустеры\n"
+    "• Пассивно накапливаются: за каждый пройденный квест ты получаешь акцию компании, которая генерирует ИР/час\n\n"
+
+    "⭐ <b>XP и уровни</b>\n"
+    "Каждый правильный ответ даёт XP. Уровень растёт автоматически — новые уровни открывают закрытые локации и возможности.\n\n"
+
+    "🚀 <b>С чего начать</b>\n"
+    "1. 🗺️ <b>Карта локаций</b> — выбери компанию (Газпром, Сбер, Лукойл…) и начни проходить квесты\n"
+    "2. После каждого правильного ответа получаешь акцию → она генерирует пассивный доход ИР/час\n"
+    "3. 💼 <b>Портфель</b> — смотри свои акции и забирай накопленный доход\n"
+    "4. 🛒 <b>Магазин</b> — купи подсказку (убирает 1 неверный ответ) или XP-буст (×2 XP за квест)\n"
+    "5. 📅 <b>Задания дня</b> — выполняй и получай бонусы\n\n"
+
+    "🎮 <b>Все возможности</b>\n"
+    "• 🎭 <b>Сценарии продаж</b> — ситуационные задачи: выбери правильную тактику продаж\n"
+    "• ⚡ <b>Легендарный режим</b> — 2× награды, но штраф XP/ИР за ошибку\n"
+    "• 🌍 <b>Мировая карта</b> — Apple, Tesla, Amazon (открывается с уровня 20)\n"
+    "• 🏰 <b>Гильдии</b> — создай команду и соревнуйся с другими отделами\n"
+    "• ⚔️ <b>Дуэль</b> — PvP батл на 5 вопросов с коллегой\n"
+    "• 👨‍🏫 <b>Наставник</b> — обучай коллегу и получай 10% его XP\n"
+    "• 🤝 <b>Совместный квест</b> — ответь на один вопрос вместе с партнёром за 1.5× награду\n\n"
+
+    "💡 <b>Совет новичку</b>\n"
+    "Начни с Газпрома или Сбера — там самые доступные вопросы. Копи ИР, купи в магазине подсказки, потом иди в Легендарный режим за двойными наградами!"
+)
+
+
 # ── Keyboard helpers ───────────────────────────────────────────────────────────
 
 def _game_main_kb() -> object:
@@ -2682,6 +2719,16 @@ async def game_open(callback: CallbackQuery, state: FSMContext):
 
     await state.clear()
     player = await game_get_or_create_player(callback.from_user.id)
+
+    if not player.get("onboarded", 1):
+        await game_set_onboarded(callback.from_user.id)
+        b = InlineKeyboardBuilder()
+        b.button(text="🚀 Начать играть!", callback_data="game:open")
+        b.adjust(1)
+        await callback.message.edit_text(_HOWTOPLAY_TEXT, parse_mode="HTML", reply_markup=b.as_markup())
+        await callback.answer()
+        return
+
     streak = await game_update_streak(callback.from_user.id)
 
     level, xp_in, xp_need = parse_level(player["xp"])
@@ -2723,43 +2770,9 @@ async def game_open(callback: CallbackQuery, state: FSMContext):
 @router.callback_query(F.data == "game:howtoplay")
 async def game_howtoplay(callback: CallbackQuery):
     b = InlineKeyboardBuilder()
-    b.button(text="◀️ В главное меню", callback_data="game:open")
+    b.button(text="🚀 Начать играть!", callback_data="game:open")
     b.adjust(1)
-    await callback.message.edit_text(
-        "📖 <b>КАК ИГРАТЬ — ПОЛНЫЙ ГАЙД</b>\n\n"
-
-        "🎯 <b>Цель игры</b>\n"
-        "Стать легендой фондового рынка, прокачивая знания об инвестициях и продажах через квесты, дуэли и командные задания.\n\n"
-
-        "💰 <b>ИнвестРубли (ИР)</b>\n"
-        "Внутренняя валюта игры:\n"
-        "• Зарабатываешь за правильные ответы на квесты\n"
-        "• Тратишь в 🛒 Магазине на подсказки и XP-бустеры\n"
-        "• Пассивно накапливаются: за каждый пройденный квест ты получаешь акцию компании, которая генерирует ИР/час\n\n"
-
-        "⭐ <b>XP и уровни</b>\n"
-        "Каждый правильный ответ даёт XP. Уровень растёт автоматически — новые уровни открывают закрытые локации и возможности.\n\n"
-
-        "🚀 <b>С чего начать</b>\n"
-        "1. 🗺️ <b>Карта локаций</b> — выбери компанию (Газпром, Сбер, Лукойл…) и начни проходить квесты\n"
-        "2. После каждого правильного ответа получаешь акцию → она генерирует пассивный доход ИР/час\n"
-        "3. 💼 <b>Портфель</b> — смотри свои акции и забирай накопленный доход\n"
-        "4. 🛒 <b>Магазин</b> — купи подсказку (убирает 1 неверный ответ) или XP-буст (×2 XP за квест)\n"
-        "5. 📅 <b>Задания дня</b> — выполняй и получай бонусы\n\n"
-
-        "🎮 <b>Все возможности</b>\n"
-        "• 🎭 <b>Сценарии продаж</b> — ситуационные задачи: выбери правильную тактику продаж\n"
-        "• ⚡ <b>Легендарный режим</b> — 2× награды, но штраф XP/ИР за ошибку\n"
-        "• 🌍 <b>Мировая карта</b> — Apple, Tesla, Amazon (открывается с уровня 20)\n"
-        "• 🏰 <b>Гильдии</b> — создай команду и соревнуйся с другими отделами\n"
-        "• ⚔️ <b>Дуэль</b> — PvP батл на 5 вопросов с коллегой\n"
-        "• 👨‍🏫 <b>Наставник</b> — обучай коллегу и получай 10% его XP\n"
-        "• 🤝 <b>Совместный квест</b> — ответь на один вопрос вместе с партнёром за 1.5× награду\n\n"
-
-        "💡 <b>Совет новичку</b>\n"
-        "Начни с Газпрома или Сбера — там самые доступные вопросы. Копи ИР, купи в магазине подсказки, потом иди в Легендарный режим за двойными наградами!",
-        parse_mode="HTML", reply_markup=b.as_markup(),
-    )
+    await callback.message.edit_text(_HOWTOPLAY_TEXT, parse_mode="HTML", reply_markup=b.as_markup())
     await callback.answer()
 
 
@@ -4375,7 +4388,12 @@ async def game_duel_answer(callback: CallbackQuery, state: FSMContext):
             # Уведомить второго игрока
             other_id = duel["opponent_id"] if user_id == duel["challenger_id"] else duel["challenger_id"]
             try:
-                await bot.send_message(other_id, result_text, parse_mode="HTML")
+                b_notify = InlineKeyboardBuilder()
+                b_notify.button(text="🎮 В игру", callback_data="game:open")
+                b_notify.adjust(1)
+                await bot.send_message(
+                    other_id, result_text, parse_mode="HTML", reply_markup=b_notify.as_markup()
+                )
             except Exception:
                 pass
         else:

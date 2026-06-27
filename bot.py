@@ -4,7 +4,7 @@ import logging
 from aiogram import Bot, Dispatcher
 from aiogram.fsm.storage.memory import MemoryStorage
 
-from config import TELEGRAM_TOKEN
+from config import TELEGRAM_TOKEN, REDIS_URL
 from handlers import start, setup, dialog, news_analysis, briefing, admin, stocks, learning, game
 from handlers.game import streak_reminder_task
 from middlewares.block import BlockMiddleware
@@ -14,11 +14,25 @@ from services.db import init_db
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 
 
+def _build_storage():
+    if REDIS_URL:
+        try:
+            from redis.asyncio import Redis
+            from aiogram.fsm.storage.redis import RedisStorage
+            redis = Redis.from_url(REDIS_URL, decode_responses=False)
+            logging.info("FSM storage: Redis (%s)", REDIS_URL.split("@")[-1])
+            return RedisStorage(redis=redis)
+        except Exception as e:
+            logging.warning("Redis unavailable (%s), falling back to MemoryStorage", e)
+    logging.info("FSM storage: MemoryStorage (state lost on restart)")
+    return MemoryStorage()
+
+
 async def main():
     await init_db()
 
     bot = Bot(token=TELEGRAM_TOKEN)
-    dp = Dispatcher(storage=MemoryStorage())
+    dp = Dispatcher(storage=_build_storage())
     dp.message.middleware(BlockMiddleware())
     dp.callback_query.middleware(BlockMiddleware())
     dp.message.middleware(SubscriptionMiddleware())

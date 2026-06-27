@@ -1,7 +1,18 @@
+import asyncio
 import json
 import aiosqlite
 from datetime import datetime, date
 from config import DB_PATH
+
+# Per-resource locks to prevent race conditions in concurrent answer handling
+_duel_locks: dict[int, asyncio.Lock] = {}
+_coop_locks: dict[int, asyncio.Lock] = {}
+
+
+def _get_lock(lock_dict: dict, key: int) -> asyncio.Lock:
+    if key not in lock_dict:
+        lock_dict[key] = asyncio.Lock()
+    return lock_dict[key]
 
 
 async def init_db() -> None:
@@ -58,6 +69,7 @@ async def init_db() -> None:
                 coins       INTEGER DEFAULT 0,
                 streak_days INTEGER DEFAULT 0,
                 last_active TEXT,
+                onboarded   INTEGER DEFAULT 0,
                 created_at  TEXT DEFAULT CURRENT_TIMESTAMP
             )
         """)
@@ -80,11 +92,20 @@ async def init_db() -> None:
                 PRIMARY KEY (user_id, quest_id)
             )
         """)
-        for col in ("hint_charges INTEGER DEFAULT 0", "xp_boost_charges INTEGER DEFAULT 0"):
+        for col in (
+            "hint_charges INTEGER DEFAULT 0",
+            "xp_boost_charges INTEGER DEFAULT 0",
+            "onboarded INTEGER DEFAULT 0",
+        ):
             try:
                 await db.execute(f"ALTER TABLE game_players ADD COLUMN {col}")
             except Exception:
                 pass
+        # Mark existing active players as already onboarded so they skip the intro
+        await db.execute(
+            "UPDATE game_players SET onboarded = 1 "
+            "WHERE onboarded = 0 AND (xp > 0 OR coins > 0 OR last_active IS NOT NULL)"
+        )
         await db.execute("""
             CREATE TABLE IF NOT EXISTS game_daily_progress (
                 user_id   INTEGER NOT NULL,
@@ -447,10 +468,16 @@ async def game_get_or_create_player(user_id: int) -> dict:
         )
         await db.commit()
         cur = await db.execute(
-            "SELECT user_id, xp, coins, streak_days, last_active, hint_charges, xp_boost_charges FROM game_players WHERE user_id = ?",
+            "SELECT user_id, xp, coins, streak_days, last_active, hint_charges, xp_boost_charges, onboarded FROM game_players WHERE user_id = ?",
             (user_id,),
         )
         return dict(await cur.fetchone())
+
+
+async def game_set_onboarded(user_id: int) -> None:
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.execute("UPDATE game_players SET onboarded = 1 WHERE user_id = ?", (user_id,))
+        await db.commit()
 
 
 async def game_update_streak(user_id: int) -> int:
@@ -994,31 +1021,32 @@ async def game_join_duel(duel_id: int, opponent_id: int) -> bool:
 
 
 async def game_save_duel_result(duel_id: int, user_id: int, score: int) -> dict:
-    async with aiosqlite.connect(DB_PATH) as db:
-        db.row_factory = aiosqlite.Row
-        cur = await db.execute("SELECT * FROM game_duels WHERE id = ?", (duel_id,))
-        row = await cur.fetchone()
-        if row is None:
-            return {"challenger_done": False, "opponent_done": False, "duel": {}}
-        duel = dict(row)
-        if user_id == duel["challenger_id"]:
-            await db.execute(
-                "UPDATE game_duels SET challenger_score = ? WHERE id = ?", (score, duel_id)
-            )
-            duel["challenger_score"] = score
-        else:
-            await db.execute(
-                "UPDATE game_duels SET opponent_score = ? WHERE id = ?", (score, duel_id)
-            )
-            duel["opponent_score"] = score
-        challenger_done = duel["challenger_score"] >= 0
-        opponent_done = duel["opponent_score"] >= 0
-        if challenger_done and opponent_done:
-            await db.execute(
-                "UPDATE game_duels SET status = 'completed' WHERE id = ?", (duel_id,)
-            )
-        await db.commit()
-        return {"challenger_done": challenger_done, "opponent_done": opponent_done, "duel": duel}
+    async with _get_lock(_duel_locks, duel_id):
+        async with aiosqlite.connect(DB_PATH) as db:
+            db.row_factory = aiosqlite.Row
+            cur = await db.execute("SELECT * FROM game_duels WHERE id = ?", (duel_id,))
+            row = await cur.fetchone()
+            if row is None:
+                return {"challenger_done": False, "opponent_done": False, "duel": {}}
+            duel = dict(row)
+            if user_id == duel["challenger_id"]:
+                await db.execute(
+                    "UPDATE game_duels SET challenger_score = ? WHERE id = ?", (score, duel_id)
+                )
+                duel["challenger_score"] = score
+            else:
+                await db.execute(
+                    "UPDATE game_duels SET opponent_score = ? WHERE id = ?", (score, duel_id)
+                )
+                duel["opponent_score"] = score
+            challenger_done = duel["challenger_score"] >= 0
+            opponent_done = duel["opponent_score"] >= 0
+            if challenger_done and opponent_done:
+                await db.execute(
+                    "UPDATE game_duels SET status = 'completed' WHERE id = ?", (duel_id,)
+                )
+            await db.commit()
+            return {"challenger_done": challenger_done, "opponent_done": opponent_done, "duel": duel}
 
 
 async def game_get_duel_by_challenger(challenger_id: int) -> dict | None:
@@ -1122,24 +1150,25 @@ async def game_get_coop(session_id: int) -> dict | None:
 
 async def game_save_coop_answer(session_id: int, user_id: int, correct: bool) -> dict:
     val = 1 if correct else 0
-    async with aiosqlite.connect(DB_PATH) as db:
-        db.row_factory = aiosqlite.Row
-        cur = await db.execute("SELECT * FROM game_coop_sessions WHERE id = ?", (session_id,))
-        sess = dict(await cur.fetchone())
-        if user_id == sess["initiator_id"]:
-            await db.execute(
-                "UPDATE game_coop_sessions SET initiator_correct = ? WHERE id = ?", (val, session_id)
-            )
-            sess["initiator_correct"] = val
-        else:
-            await db.execute(
-                "UPDATE game_coop_sessions SET partner_correct = ? WHERE id = ?", (val, session_id)
-            )
-            sess["partner_correct"] = val
-        both_done = sess["initiator_correct"] >= 0 and sess["partner_correct"] >= 0
-        if both_done:
-            await db.execute(
-                "UPDATE game_coop_sessions SET status = 'completed' WHERE id = ?", (session_id,)
-            )
-        await db.commit()
-        return {"both_done": both_done, "session": sess}
+    async with _get_lock(_coop_locks, session_id):
+        async with aiosqlite.connect(DB_PATH) as db:
+            db.row_factory = aiosqlite.Row
+            cur = await db.execute("SELECT * FROM game_coop_sessions WHERE id = ?", (session_id,))
+            sess = dict(await cur.fetchone())
+            if user_id == sess["initiator_id"]:
+                await db.execute(
+                    "UPDATE game_coop_sessions SET initiator_correct = ? WHERE id = ?", (val, session_id)
+                )
+                sess["initiator_correct"] = val
+            else:
+                await db.execute(
+                    "UPDATE game_coop_sessions SET partner_correct = ? WHERE id = ?", (val, session_id)
+                )
+                sess["partner_correct"] = val
+            both_done = sess["initiator_correct"] >= 0 and sess["partner_correct"] >= 0
+            if both_done:
+                await db.execute(
+                    "UPDATE game_coop_sessions SET status = 'completed' WHERE id = ?", (session_id,)
+                )
+            await db.commit()
+            return {"both_done": both_done, "session": sess}
