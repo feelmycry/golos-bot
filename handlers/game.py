@@ -4291,6 +4291,9 @@ async def game_coop_option(callback: CallbackQuery, state: FSMContext):
     if not sess:
         await callback.answer()
         return
+    if sess.get("status") == "completed":
+        await callback.answer("Квест уже завершён!", show_alert=True)
+        return
     quest = json.loads(sess["quest_json"])
     is_correct = (ans == quest["correct"])
     user_id = callback.from_user.id
@@ -4307,11 +4310,24 @@ async def game_coop_option(callback: CallbackQuery, state: FSMContext):
         if xp_gain:
             await game_update_player(user_id, xp=xp_gain, coins=coins_gain)
 
-        result_text = (
-            f"🤝 <b>Совместный квест завершён!</b>\n\n"
-            f"{'✅ Оба ответили верно! ×1.5 награда!' if both_correct else '⚠️ Кто-то ошибся — стандартная награда.'}\n\n"
-            f"Ты получил: +{xp_gain} XP, +{coins_gain} ИР"
-        )
+        if both_correct:
+            result_text = (
+                f"🤝 <b>Совместный квест завершён!</b>\n\n"
+                f"✅ Оба ответили верно! ×1.5 награда!\n\n"
+                f"Ты получил: +{xp_gain} XP, +{coins_gain} ИР"
+            )
+        elif is_correct:
+            result_text = (
+                f"🤝 <b>Совместный квест завершён!</b>\n\n"
+                f"⚠️ Партнёр ошибся — стандартная награда.\n\n"
+                f"Ты получил: +{xp_gain} XP, +{coins_gain} ИР"
+            )
+        else:
+            result_text = (
+                f"🤝 <b>Совместный квест завершён!</b>\n\n"
+                f"❌ Ты ошибся — наград нет.\n\n"
+                f"Ты получил: +0 XP, +0 ИР"
+            )
         b = InlineKeyboardBuilder()
         b.button(text="🎮 В игру", callback_data="game:open")
         b.adjust(1)
