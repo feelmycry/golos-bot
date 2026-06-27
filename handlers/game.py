@@ -2757,6 +2757,9 @@ async def game_loc_legendary(callback: CallbackQuery, state: FSMContext):
         await callback.answer()
         return
 
+    data = await state.get_data()
+    legendary = data.get("legendary", False)
+
     loc_id = callback.data[len("game:loc:"):]
     all_locs = {**LOCATIONS, **WORLD_LOCATIONS}
     loc = all_locs.get(loc_id)
@@ -2787,6 +2790,8 @@ async def game_loc_legendary(callback: CallbackQuery, state: FSMContext):
         f"📈 Акций: <b>0</b> · Пройди квесты — за каждый получаешь акцию!\n"
     )
 
+    legendary_line = "⚡ <i>Легендарный режим активен</i>\n\n" if legendary else ""
+
     text = (
         f"{loc['emoji']} <b>{loc['name']}</b>\n"
         f"<i>{loc['sector']}</i>\n\n"
@@ -2794,7 +2799,7 @@ async def game_loc_legendary(callback: CallbackQuery, state: FSMContext):
         f"🏅 Репутация: <b>{rep}</b> — {rank}\n"
         f"{income_line}"
         f"✅ Квестов пройдено: {done_q}/{len(loc['quests'])}\n\n"
-        f"⚡ <i>Легендарный режим активен</i>\n\n"
+        f"{legendary_line}"
         f"Выбери квест:"
     )
     # Do NOT clear state here — preserve the legendary=True flag
@@ -3826,12 +3831,12 @@ async def game_guild_menu(callback: CallbackQuery, state: FSMContext):
 
     if guild:
         members = await game_get_guild_members(guild["id"])
-        lines = [f"{guild['emoji']} <b>{guild['name']}</b>",
+        lines = [f"{guild['emoji']} <b>{html.escape(guild['name'])}</b>",
                  f"👥 Участников: {guild['members']} | 🏆 Общий XP: {guild['total_xp']:,}",
                  "", "<b>Топ участников:</b>"]
         for i, m in enumerate(members[:10], 1):
             lvl = parse_level(m["xp"])[0]
-            lines.append(f"{i}. {m['first_name']} · Ур.{lvl} · {m['xp']:,} XP")
+            lines.append(f"{i}. {html.escape(m['first_name'])} · Ур.{lvl} · {m['xp']:,} XP")
 
         b = InlineKeyboardBuilder()
         b.button(text="📊 Рейтинг гильдий", callback_data="game:guild_leaderboard")
@@ -4089,7 +4094,7 @@ async def _send_duel_question(message, state: FSMContext, questions: list, idx: 
     b.adjust(1)
     text = (
         f"⚔️ <b>Дуэль — вопрос {idx+1}/{len(questions)}</b>\n\n"
-        f"<b>{q['question']}</b>"
+        f"<b>{html.escape(q['question'])}</b>"
     )
     if edit:
         await message.edit_text(text, parse_mode="HTML", reply_markup=b.as_markup())
@@ -4204,7 +4209,7 @@ async def game_mentor_menu(callback: CallbackQuery):
         lines.append(f"\n👥 <b>Твои ученики ({len(mentees)}):</b>")
         for m in mentees:
             lvl = parse_level(m["xp"])[0]
-            lines.append(f"• {m['first_name']} · Ур.{lvl} · {m['xp']:,} XP")
+            lines.append(f"• {html.escape(m['first_name'])} · Ур.{lvl} · {m['xp']:,} XP")
         lines.append("\n✨ Ты получаешь <b>+10% XP</b> каждый раз, когда ученик отвечает верно.")
     else:
         lines.append("\n👥 Учеников пока нет.")
@@ -4250,7 +4255,7 @@ async def game_coop_menu(callback: CallbackQuery, state: FSMContext):
     b.adjust(1)
     await callback.message.edit_text(
         f"🤝 <b>СОВМЕСТНЫЙ КВЕСТ</b>\n\n"
-        f"Вопрос: <b>{quest['question']}</b>\n\n"
+        f"Вопрос: <b>{html.escape(quest['question'])}</b>\n\n"
         f"Пригласи партнёра:\n<code>{invite_link}</code>\n\n"
         "Если оба ответите правильно — получите <b>×1.5 награду!</b>",
         parse_mode="HTML", reply_markup=b.as_markup(),
@@ -4274,7 +4279,7 @@ async def game_coop_show_question(callback: CallbackQuery, state: FSMContext):
         b.button(text=opt, callback_data=f"game:coop_opt:{session_id}:{i}")
     b.adjust(1)
     await callback.message.edit_text(
-        f"🤝 <b>Совместный квест</b>\n\n<b>{quest['question']}</b>",
+        f"🤝 <b>Совместный квест</b>\n\n<b>{html.escape(quest['question'])}</b>",
         parse_mode="HTML", reply_markup=b.as_markup(),
     )
     await callback.answer()
