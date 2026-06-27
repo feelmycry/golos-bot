@@ -4089,12 +4089,14 @@ async def game_duel_create(callback: CallbackQuery, state: FSMContext):
 async def _send_duel_question(message, state: FSMContext, questions: list, idx: int, edit: bool = False):
     q = questions[idx]
     b = InlineKeyboardBuilder()
-    for i, opt in enumerate(q["options"]):
-        b.button(text=opt, callback_data=f"game:duel_ans:{idx}:{i}")
-    b.adjust(1)
+    for i in range(len(q["options"])):
+        b.button(text=_NUM[i], callback_data=f"game:duel_ans:{idx}:{i}")
+    b.adjust(len(q["options"]))
+    opts = "\n".join(f"{_NUM[i]} {html.escape(opt)}" for i, opt in enumerate(q["options"]))
     text = (
         f"⚔️ <b>Дуэль — вопрос {idx+1}/{len(questions)}</b>\n\n"
-        f"<b>{html.escape(q['question'])}</b>"
+        f"<b>{html.escape(q['question'])}</b>\n\n"
+        f"{opts}"
     )
     if edit:
         await message.edit_text(text, parse_mode="HTML", reply_markup=b.as_markup())
@@ -4275,11 +4277,12 @@ async def game_coop_show_question(callback: CallbackQuery, state: FSMContext):
         return
     quest = json.loads(sess["quest_json"])
     b = InlineKeyboardBuilder()
-    for i, opt in enumerate(quest["options"]):
-        b.button(text=opt, callback_data=f"game:coop_opt:{session_id}:{i}")
-    b.adjust(1)
+    for i in range(len(quest["options"])):
+        b.button(text=_NUM[i], callback_data=f"game:coop_opt:{session_id}:{i}")
+    b.adjust(len(quest["options"]))
+    opts = "\n".join(f"{_NUM[i]} {html.escape(opt)}" for i, opt in enumerate(quest["options"]))
     await callback.message.edit_text(
-        f"🤝 <b>Совместный квест</b>\n\n<b>{html.escape(quest['question'])}</b>",
+        f"🤝 <b>Совместный квест</b>\n\n<b>{html.escape(quest['question'])}</b>\n\n{opts}",
         parse_mode="HTML", reply_markup=b.as_markup(),
     )
     await callback.answer()
