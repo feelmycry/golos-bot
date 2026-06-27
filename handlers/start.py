@@ -4,7 +4,7 @@ from aiogram.filters import CommandStart, Command, CommandObject
 from aiogram.fsm.context import FSMContext
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 
-from services.db import upsert_user, get_user_stats
+from services.db import upsert_user, get_user_stats, game_link_mentor
 
 router = Router()
 
@@ -72,8 +72,10 @@ async def cmd_start(message: Message, state: FSMContext, command: CommandObject 
             mentor_id = int(args[7:])
         except ValueError:
             mentor_id = None
+        if mentor_id is None:
+            await message.answer("❌ Неверная ссылка наставника.")
+            # fall through to normal start
         if mentor_id:
-            from services.db import game_link_mentor
             linked = await game_link_mentor(mentor_id, message.from_user.id)
             if linked:
                 await message.answer(

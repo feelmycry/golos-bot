@@ -1048,7 +1048,7 @@ async def game_get_mentees(mentor_id: int) -> list[dict]:
     async with aiosqlite.connect(DB_PATH) as db:
         db.row_factory = aiosqlite.Row
         cur = await db.execute(
-            """SELECT u.first_name, gp.xp, gp.level, gm.created_at
+            """SELECT u.first_name, gp.xp, gm.created_at
                FROM game_mentors gm
                JOIN users u ON u.telegram_id = gm.mentee_id
                JOIN game_players gp ON gp.user_id = gm.mentee_id
