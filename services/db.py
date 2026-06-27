@@ -157,6 +157,20 @@ async def init_db() -> None:
                 created_at TEXT    DEFAULT CURRENT_TIMESTAMP
             )
         """)
+        await db.execute("""
+            CREATE TABLE IF NOT EXISTS game_coop_sessions (
+                id                 INTEGER PRIMARY KEY AUTOINCREMENT,
+                initiator_id       INTEGER NOT NULL,
+                partner_id         INTEGER,
+                quest_id           TEXT    NOT NULL,
+                location_id        TEXT    NOT NULL,
+                quest_json         TEXT    NOT NULL,
+                initiator_correct  INTEGER DEFAULT -1,
+                partner_correct    INTEGER DEFAULT -1,
+                status             TEXT    DEFAULT 'pending',
+                created_at         TEXT    DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
         await db.commit()
 
 
@@ -1067,3 +1081,65 @@ async def game_add_mentor_bonus(mentor_id: int, xp: int) -> None:
             (bonus, bonus // 2, mentor_id),
         )
         await db.commit()
+
+
+# ── Co-op functions ───────────────────────────────────────────────────────────
+
+async def game_create_coop(initiator_id: int, quest_id: str, location_id: str, quest_json: str) -> int:
+    async with aiosqlite.connect(DB_PATH) as db:
+        cur = await db.execute(
+            """INSERT INTO game_coop_sessions
+               (initiator_id, quest_id, location_id, quest_json) VALUES (?, ?, ?, ?)""",
+            (initiator_id, quest_id, location_id, quest_json),
+        )
+        await db.commit()
+        return cur.lastrowid
+
+
+async def game_join_coop(session_id: int, partner_id: int) -> bool:
+    async with aiosqlite.connect(DB_PATH) as db:
+        cur = await db.execute(
+            "SELECT initiator_id, status FROM game_coop_sessions WHERE id = ?", (session_id,)
+        )
+        row = await cur.fetchone()
+        if not row or row[0] == partner_id or row[1] != "pending":
+            return False
+        await db.execute(
+            "UPDATE game_coop_sessions SET partner_id = ?, status = 'in_progress' WHERE id = ?",
+            (partner_id, session_id),
+        )
+        await db.commit()
+        return True
+
+
+async def game_get_coop(session_id: int) -> dict | None:
+    async with aiosqlite.connect(DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        cur = await db.execute("SELECT * FROM game_coop_sessions WHERE id = ?", (session_id,))
+        row = await cur.fetchone()
+        return dict(row) if row else None
+
+
+async def game_save_coop_answer(session_id: int, user_id: int, correct: bool) -> dict:
+    val = 1 if correct else 0
+    async with aiosqlite.connect(DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        cur = await db.execute("SELECT * FROM game_coop_sessions WHERE id = ?", (session_id,))
+        sess = dict(await cur.fetchone())
+        if user_id == sess["initiator_id"]:
+            await db.execute(
+                "UPDATE game_coop_sessions SET initiator_correct = ? WHERE id = ?", (val, session_id)
+            )
+            sess["initiator_correct"] = val
+        else:
+            await db.execute(
+                "UPDATE game_coop_sessions SET partner_correct = ? WHERE id = ?", (val, session_id)
+            )
+            sess["partner_correct"] = val
+        both_done = sess["initiator_correct"] >= 0 and sess["partner_correct"] >= 0
+        if both_done:
+            await db.execute(
+                "UPDATE game_coop_sessions SET status = 'completed' WHERE id = ?", (session_id,)
+            )
+        await db.commit()
+        return {"both_done": both_done, "session": sess}

@@ -60,6 +60,10 @@ from services.db import (
     game_get_mentor,
     game_get_mentees,
     game_add_mentor_bonus,
+    game_create_coop,
+    game_join_coop,
+    game_get_coop,
+    game_save_coop_answer,
 )
 from states.game import GameState, GuildState
 
@@ -2572,8 +2576,9 @@ def _game_main_kb() -> object:
     b.button(text="🏰 Гильдия",           callback_data="game:guild")
     b.button(text="⚔️ Дуэль",             callback_data="game:duel")
     b.button(text="👨‍🏫 Наставник",         callback_data="game:mentor")
+    b.button(text="🤝 Совместный квест",   callback_data="game:coop")
     b.button(text="◀️ Назад в меню",      callback_data="back_to_menu")
-    b.adjust(2, 2, 2, 2, 2, 2, 1, 1)
+    b.adjust(2, 2, 2, 2, 2, 2, 2, 1)
     return b.as_markup()
 
 
@@ -4211,4 +4216,132 @@ async def game_mentor_menu(callback: CallbackQuery):
     b.button(text="◀️ Назад", callback_data="game:open")
     b.adjust(1)
     await callback.message.edit_text("\n".join(lines), parse_mode="HTML", reply_markup=b.as_markup())
+    await callback.answer()
+
+
+# ── Совместные квесты ─────────────────────────────────────────────────────────
+
+def _pick_random_quest() -> tuple[str, str, dict]:
+    """Returns (loc_id, quest_id, quest_dict)."""
+    all_quests = []
+    for loc_id, loc in {**LOCATIONS, **WORLD_LOCATIONS}.items():
+        for q in loc["quests"]:
+            all_quests.append((loc_id, q["id"], q))
+    return random.choice(all_quests)
+
+
+@router.callback_query(F.data == "game:coop")
+async def game_coop_menu(callback: CallbackQuery, state: FSMContext):
+    if callback.from_user.id not in ADMIN_IDS:
+        await callback.answer("⛔ Доступ закрыт", show_alert=True)
+        return
+    loc_id, quest_id, quest = _pick_random_quest()
+    session_id = await game_create_coop(
+        callback.from_user.id, quest_id, loc_id,
+        json.dumps(quest, ensure_ascii=False),
+    )
+    await state.update_data(coop_session_id=session_id, coop_quest=quest, coop_loc_id=loc_id)
+    bot_info = await callback.bot.get_me()
+    invite_link = f"https://t.me/{bot_info.username}?start=coop_{session_id}"
+
+    b = InlineKeyboardBuilder()
+    b.button(text="▶️ Ответить прямо сейчас", callback_data=f"game:coop_answer:{session_id}")
+    b.button(text="◀️ Назад", callback_data="game:open")
+    b.adjust(1)
+    await callback.message.edit_text(
+        f"🤝 <b>СОВМЕСТНЫЙ КВЕСТ</b>\n\n"
+        f"Вопрос: <b>{quest['question']}</b>\n\n"
+        f"Пригласи партнёра:\n<code>{invite_link}</code>\n\n"
+        "Если оба ответите правильно — получите <b>×1.5 награду!</b>",
+        parse_mode="HTML", reply_markup=b.as_markup(),
+    )
+    await callback.answer()
+
+
+@router.callback_query(F.data.startswith("game:coop_answer:"))
+async def game_coop_show_question(callback: CallbackQuery, state: FSMContext):
+    if callback.from_user.id not in ADMIN_IDS:
+        await callback.answer("⛔ Доступ закрыт", show_alert=True)
+        return
+    session_id = int(callback.data.split(":")[-1])
+    sess = await game_get_coop(session_id)
+    if not sess:
+        await callback.answer("Сессия не найдена", show_alert=True)
+        return
+    quest = json.loads(sess["quest_json"])
+    b = InlineKeyboardBuilder()
+    for i, opt in enumerate(quest["options"]):
+        b.button(text=opt, callback_data=f"game:coop_opt:{session_id}:{i}")
+    b.adjust(1)
+    await callback.message.edit_text(
+        f"🤝 <b>Совместный квест</b>\n\n<b>{quest['question']}</b>",
+        parse_mode="HTML", reply_markup=b.as_markup(),
+    )
+    await callback.answer()
+
+
+@router.callback_query(F.data.startswith("game:coop_opt:"))
+async def game_coop_option(callback: CallbackQuery, state: FSMContext):
+    if callback.from_user.id not in ADMIN_IDS:
+        await callback.answer("⛔ Доступ закрыт", show_alert=True)
+        return
+    parts = callback.data.split(":")
+    session_id, ans = int(parts[2]), int(parts[3])
+    sess = await game_get_coop(session_id)
+    if not sess:
+        await callback.answer()
+        return
+    quest = json.loads(sess["quest_json"])
+    is_correct = (ans == quest["correct"])
+    user_id = callback.from_user.id
+
+    result = await game_save_coop_answer(session_id, user_id, is_correct)
+    sess_updated = result["session"]
+
+    if result["both_done"]:
+        both_correct = sess_updated["initiator_correct"] == 1 and sess_updated["partner_correct"] == 1
+        mult = 1.5 if both_correct else 1.0
+        xp_gain = int(quest["xp"] * mult) if is_correct else 0
+        coins_gain = int(quest["coins"] * mult) if is_correct else 0
+
+        if xp_gain:
+            await game_update_player(user_id, xp=xp_gain, coins=coins_gain)
+
+        result_text = (
+            f"🤝 <b>Совместный квест завершён!</b>\n\n"
+            f"{'✅ Оба ответили верно! ×1.5 награда!' if both_correct else '⚠️ Кто-то ошибся — стандартная награда.'}\n\n"
+            f"Ты получил: +{xp_gain} XP, +{coins_gain} ИР"
+        )
+        b = InlineKeyboardBuilder()
+        b.button(text="🎮 В игру", callback_data="game:open")
+        b.adjust(1)
+        await callback.message.edit_text(result_text, parse_mode="HTML", reply_markup=b.as_markup())
+
+        # Notify partner
+        other_id = sess_updated["partner_id"] if user_id == sess_updated["initiator_id"] else sess_updated["initiator_id"]
+        partner_correct = sess_updated["partner_correct"] if user_id == sess_updated["initiator_id"] else sess_updated["initiator_correct"]
+        partner_xp = int(quest["xp"] * mult) if partner_correct else 0
+        partner_coins = int(quest["coins"] * mult) if partner_correct else 0
+        if partner_xp:
+            await game_update_player(other_id, xp=partner_xp, coins=partner_coins)
+        if other_id:
+            try:
+                await callback.bot.send_message(
+                    other_id,
+                    f"🤝 <b>Совместный квест завершён!</b>\n\n"
+                    f"{'✅ Оба ответили верно!' if both_correct else '⚠️ Кто-то ошибся.'}\n"
+                    f"Ты получил: +{partner_xp} XP, +{partner_coins} ИР",
+                    parse_mode="HTML",
+                )
+            except Exception:
+                pass
+    else:
+        icon = "✅" if is_correct else "❌"
+        b = InlineKeyboardBuilder()
+        b.button(text="🎮 В игру", callback_data="game:open")
+        b.adjust(1)
+        await callback.message.edit_text(
+            f"{icon} Ответ принят! Ждём партнёра...",
+            reply_markup=b.as_markup(),
+        )
     await callback.answer()

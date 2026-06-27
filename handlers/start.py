@@ -93,6 +93,38 @@ async def cmd_start(message: Message, state: FSMContext, command: CommandObject 
                 await message.answer("❌ Ссылка недействительна или ты уже привязан к наставнику.")
         # fall through to normal start menu
 
+    elif args and args.startswith("coop_"):
+        try:
+            session_id = int(args[5:])
+        except ValueError:
+            session_id = None
+        if session_id:
+            from services.db import game_join_coop, game_get_coop
+            import json as _json
+            joined = await game_join_coop(session_id, message.from_user.id)
+            if joined:
+                sess = await game_get_coop(session_id)
+                quest = _json.loads(sess["quest_json"])
+                b_coop = InlineKeyboardBuilder()
+                b_coop.button(text="▶️ Ответить", callback_data=f"game:coop_answer:{session_id}")
+                b_coop.adjust(1)
+                await message.answer(
+                    f"🤝 <b>Совместный квест!</b>\n\n<b>{quest['question']}</b>\n\nНажми чтобы ответить:",
+                    parse_mode="HTML", reply_markup=b_coop.as_markup(),
+                )
+                # Notify initiator
+                try:
+                    await message.bot.send_message(
+                        sess["initiator_id"],
+                        f"🤝 {message.from_user.first_name or 'Партнёр'} принял совместный квест! Отвечай!"
+                    )
+                except Exception:
+                    pass
+                return
+            else:
+                await message.answer("❌ Сессия не найдена или уже начата.")
+        # fall through to normal start menu
+
     name = message.from_user.first_name or "Коллега"
     await message.answer(
         f"Привет, {name}! 👋\n\n"
