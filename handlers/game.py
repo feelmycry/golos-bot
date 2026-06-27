@@ -2663,6 +2663,14 @@ def _pick_eliminated(options: list, correct: int) -> int:
     return wrong[-1]
 
 
+def _shuffle_quest_options(quest: dict) -> dict:
+    """Returns a shallow copy of quest with options randomly shuffled and correct index updated."""
+    options = quest["options"][:]
+    correct_text = options[quest["correct"]]
+    random.shuffle(options)
+    return {**quest, "options": options, "correct": options.index(correct_text)}
+
+
 # ── Entry point ────────────────────────────────────────────────────────────────
 
 @router.callback_query(F.data == "game:open")
@@ -2959,6 +2967,8 @@ async def game_quest(callback: CallbackQuery, state: FSMContext):
         await callback.answer("Квест не найден", show_alert=True)
         return
 
+    quest = _shuffle_quest_options(quest)
+
     completed = await game_get_completed_quests(callback.from_user.id)
     already_done = quest_id in completed
 
@@ -2990,7 +3000,10 @@ async def game_quest(callback: CallbackQuery, state: FSMContext):
     kb = _quest_options_kb(loc_id, quest_id, quest["options"], quest["correct"], None, eliminated)
     await callback.message.edit_text(text, parse_mode="HTML", reply_markup=kb)
     await state.set_state(GameState.in_quest)
-    await state.update_data(loc_id=loc_id, quest_id=quest_id, eliminated=eliminated)
+    await state.update_data(
+        loc_id=loc_id, quest_id=quest_id, eliminated=eliminated,
+        shuffled_correct=quest["correct"], shuffled_options=quest["options"],
+    )
     await callback.answer()
 
 
@@ -3013,8 +3026,10 @@ async def game_answer(callback: CallbackQuery, state: FSMContext):
     state_data = await state.get_data()
     eliminated = state_data.get("eliminated")
     legendary = state_data.get("legendary", False)
+    shuffled_correct = state_data.get("shuffled_correct", quest["correct"])
+    shuffled_options = state_data.get("shuffled_options", quest["options"])
 
-    is_correct = answer_idx == quest["correct"]
+    is_correct = answer_idx == shuffled_correct
     completed = await game_get_completed_quests(callback.from_user.id)
     already_done = quest_id in completed
 
@@ -3075,7 +3090,7 @@ async def game_answer(callback: CallbackQuery, state: FSMContext):
     if is_correct and not already_done and mult > 1.0:
         streak_bonus_text = f" (×{mult:.1f} серия)"
 
-    opts = _options_text(quest["options"], quest["correct"], answer_idx, eliminated)
+    opts = _options_text(shuffled_options, shuffled_correct, answer_idx, eliminated)
 
     if is_correct:
         result_header = "✅ <b>Верно!</b>"
@@ -3128,7 +3143,7 @@ async def game_answer(callback: CallbackQuery, state: FSMContext):
         f"📊 Уровень {level_after} | XP {xp_in}/{xp_need}"
     )
 
-    kb = _quest_options_kb(loc_id, quest_id, quest["options"], quest["correct"], answer_idx, eliminated, legendary=legendary)
+    kb = _quest_options_kb(loc_id, quest_id, shuffled_options, shuffled_correct, answer_idx, eliminated, legendary=legendary)
     await callback.message.edit_text(text, parse_mode="HTML", reply_markup=kb)
     await state.update_data(legendary=legendary)
     await callback.answer("✅ Верно!" if is_correct else "❌ Неверно")
@@ -4050,7 +4065,8 @@ def _pick_duel_questions(n: int = 5) -> list[dict]:
                 "options": q["options"], "correct": q["correct"],
                 "xp": q["xp"], "coins": q["coins"],
             })
-    return random.sample(all_quests, min(n, len(all_quests)))
+    picked = random.sample(all_quests, min(n, len(all_quests)))
+    return [_shuffle_quest_options(q) for q in picked]
 
 
 @router.callback_query(F.data == "game:duel")
@@ -4243,6 +4259,7 @@ async def game_coop_menu(callback: CallbackQuery, state: FSMContext):
         await callback.answer("⛔ Доступ закрыт", show_alert=True)
         return
     loc_id, quest_id, quest = _pick_random_quest()
+    quest = _shuffle_quest_options(quest)
     session_id = await game_create_coop(
         callback.from_user.id, quest_id, loc_id,
         json.dumps(quest, ensure_ascii=False),
