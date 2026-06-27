@@ -2563,6 +2563,7 @@ WORLD_LOCATIONS: dict[str, dict] = {
 
 def _game_main_kb() -> object:
     b = InlineKeyboardBuilder()
+    b.button(text="📖 Как играть",        callback_data="game:howtoplay")
     b.button(text="🗺️ Карта локаций",    callback_data="game:map")
     b.button(text="💼 Портфель",          callback_data="game:portfolio")
     b.button(text="📊 Биржа",             callback_data="game:exchange")
@@ -2578,7 +2579,7 @@ def _game_main_kb() -> object:
     b.button(text="👨‍🏫 Наставник",         callback_data="game:mentor")
     b.button(text="🤝 Совместный квест",   callback_data="game:coop")
     b.button(text="◀️ Назад в меню",      callback_data="back_to_menu")
-    b.adjust(2, 2, 2, 2, 2, 2, 2, 1)
+    b.adjust(1, 2, 2, 2, 2, 2, 2, 2, 1)
     return b.as_markup()
 
 
@@ -2717,6 +2718,191 @@ async def game_open(callback: CallbackQuery, state: FSMContext):
     await callback.answer()
 
 
+# ── Как играть и info-страницы ────────────────────────────────────────────────
+
+@router.callback_query(F.data == "game:howtoplay")
+async def game_howtoplay(callback: CallbackQuery):
+    b = InlineKeyboardBuilder()
+    b.button(text="◀️ В главное меню", callback_data="game:open")
+    b.adjust(1)
+    await callback.message.edit_text(
+        "📖 <b>КАК ИГРАТЬ — ПОЛНЫЙ ГАЙД</b>\n\n"
+
+        "🎯 <b>Цель игры</b>\n"
+        "Стать легендой фондового рынка, прокачивая знания об инвестициях и продажах через квесты, дуэли и командные задания.\n\n"
+
+        "💰 <b>ИнвестРубли (ИР)</b>\n"
+        "Внутренняя валюта игры:\n"
+        "• Зарабатываешь за правильные ответы на квесты\n"
+        "• Тратишь в 🛒 Магазине на подсказки и XP-бустеры\n"
+        "• Пассивно накапливаются: за каждый пройденный квест ты получаешь акцию компании, которая генерирует ИР/час\n\n"
+
+        "⭐ <b>XP и уровни</b>\n"
+        "Каждый правильный ответ даёт XP. Уровень растёт автоматически — новые уровни открывают закрытые локации и возможности.\n\n"
+
+        "🚀 <b>С чего начать</b>\n"
+        "1. 🗺️ <b>Карта локаций</b> — выбери компанию (Газпром, Сбер, Лукойл…) и начни проходить квесты\n"
+        "2. После каждого правильного ответа получаешь акцию → она генерирует пассивный доход ИР/час\n"
+        "3. 💼 <b>Портфель</b> — смотри свои акции и забирай накопленный доход\n"
+        "4. 🛒 <b>Магазин</b> — купи подсказку (убирает 1 неверный ответ) или XP-буст (×2 XP за квест)\n"
+        "5. 📅 <b>Задания дня</b> — выполняй и получай бонусы\n\n"
+
+        "🎮 <b>Все возможности</b>\n"
+        "• 🎭 <b>Сценарии продаж</b> — ситуационные задачи: выбери правильную тактику продаж\n"
+        "• ⚡ <b>Легендарный режим</b> — 2× награды, но штраф XP/ИР за ошибку\n"
+        "• 🌍 <b>Мировая карта</b> — Apple, Tesla, Amazon (открывается с уровня 20)\n"
+        "• 🏰 <b>Гильдии</b> — создай команду и соревнуйся с другими отделами\n"
+        "• ⚔️ <b>Дуэль</b> — PvP батл на 5 вопросов с коллегой\n"
+        "• 👨‍🏫 <b>Наставник</b> — обучай коллегу и получай 10% его XP\n"
+        "• 🤝 <b>Совместный квест</b> — ответь на один вопрос вместе с партнёром за 1.5× награду\n\n"
+
+        "💡 <b>Совет новичку</b>\n"
+        "Начни с Газпрома или Сбера — там самые доступные вопросы. Копи ИР, купи в магазине подсказки, потом иди в Легендарный режим за двойными наградами!",
+        parse_mode="HTML", reply_markup=b.as_markup(),
+    )
+    await callback.answer()
+
+
+@router.callback_query(F.data == "game:info:legendary")
+async def game_info_legendary(callback: CallbackQuery):
+    b = InlineKeyboardBuilder()
+    b.button(text="⚡ Войти в Легендарный режим", callback_data="game:legendary_confirm")
+    b.button(text="◀️ Назад", callback_data="game:legendary")
+    b.adjust(1)
+    await callback.message.edit_text(
+        "⚡ <b>ЛЕГЕНДАРНЫЙ РЕЖИМ — ПОДРОБНЕЕ</b>\n\n"
+        "Режим для тех, кто знает материал и хочет максимальной отдачи.\n\n"
+        "✅ <b>Правильный ответ:</b> 2× XP и 2× ИР вместо обычных\n"
+        "❌ <b>Неправильный ответ:</b> штраф 50% XP и 50% ИР от награды этого квеста\n"
+        "🚫 <b>Подсказки:</b> недоступны — никаких подсказок\n"
+        "🛡️ <b>Защита:</b> XP и ИР не упадут ниже 0\n\n"
+        "Режим применяется ко всем локациям, включая 🌍 Мировую карту.\n\n"
+        "💡 <b>Тактика:</b> сначала пройди квест в обычном режиме, запомни ответ — потом иди в Легендарный за двойной наградой!",
+        parse_mode="HTML", reply_markup=b.as_markup(),
+    )
+    await callback.answer()
+
+
+@router.callback_query(F.data == "game:info:duel")
+async def game_info_duel(callback: CallbackQuery):
+    b = InlineKeyboardBuilder()
+    b.button(text="⚔️ Создать дуэль", callback_data="game:duel_create")
+    b.button(text="◀️ Назад", callback_data="game:duel")
+    b.adjust(1)
+    await callback.message.edit_text(
+        "⚔️ <b>ДУЭЛЬ — КАК ЭТО РАБОТАЕТ</b>\n\n"
+        "<b>Шаг 1.</b> Ты отвечаешь на 5 вопросов по инвестициям прямо сейчас.\n"
+        "<b>Шаг 2.</b> Получаешь персональную ссылку-вызов — отправь её коллеге.\n"
+        "<b>Шаг 3.</b> Коллега переходит по ссылке и отвечает на те же 5 вопросов.\n"
+        "<b>Шаг 4.</b> Когда оба ответят — система объявляет победителя.\n\n"
+        "🏆 <b>Победитель</b> (больше правильных): +500 XP, +300 ИР\n"
+        "🤝 <b>Ничья</b>: оба получают +150 XP\n\n"
+        "❗ Вопросы случайные, у каждого свой порядок вариантов — честный батл на знания!\n\n"
+        "Коллега должен перейти по ссылке через Telegram-бота, иначе дуэль останется незавершённой.",
+        parse_mode="HTML", reply_markup=b.as_markup(),
+    )
+    await callback.answer()
+
+
+@router.callback_query(F.data == "game:info:guild")
+async def game_info_guild(callback: CallbackQuery):
+    b = InlineKeyboardBuilder()
+    b.button(text="◀️ Назад к гильдии", callback_data="game:guild")
+    b.adjust(1)
+    await callback.message.edit_text(
+        "🏰 <b>ГИЛЬДИИ — КАК ЭТО РАБОТАЕТ</b>\n\n"
+        "Гильдия — это команда игроков, которые соревнуются вместе.\n\n"
+        "📌 <b>Как вступить:</b>\n"
+        "• Создай свою гильдию — придумай название и выбери эмодзи\n"
+        "• Или вступи по числовому коду от товарища\n\n"
+        "🎁 <b>Что даёт гильдия:</b>\n"
+        "• Видишь прогресс коллег внутри гильдии (уровень, XP)\n"
+        "• Общий рейтинг гильдий — суммарный XP всех участников\n"
+        "• Соревнование с другими командами/отделами\n\n"
+        "🔑 <b>Как пригласить коллегу:</b>\n"
+        "• Зайди в Гильдию → кнопка Пригласить\n"
+        "• Скопируй числовой код и отправь товарищу\n"
+        "• Товарищ: Гильдия → Вступить по коду → вводит код\n\n"
+        "В гильдии может быть любое количество участников. Покинуть гильдию можно в любой момент.",
+        parse_mode="HTML", reply_markup=b.as_markup(),
+    )
+    await callback.answer()
+
+
+@router.callback_query(F.data == "game:info:mentor")
+async def game_info_mentor(callback: CallbackQuery):
+    b = InlineKeyboardBuilder()
+    b.button(text="◀️ Назад к наставничеству", callback_data="game:mentor")
+    b.adjust(1)
+    await callback.message.edit_text(
+        "👨‍🏫 <b>НАСТАВНИЧЕСТВО — КАК ЭТО РАБОТАЕТ</b>\n\n"
+        "Система позволяет обучать коллег и зарабатывать на их успехах.\n\n"
+        "🎓 <b>Как стать наставником:</b>\n"
+        "• Открой меню Наставник\n"
+        "• Скопируй свою ссылку-приглашение\n"
+        "• Отправь её коллеге — когда он перейдёт, станет твоим учеником\n\n"
+        "💰 <b>Что получает ментор:</b>\n"
+        "• +10% XP каждый раз, когда ученик даёт правильный ответ на квест\n"
+        "• Бонус начисляется автоматически, без каких-либо действий с твоей стороны\n"
+        "• У тебя может быть несколько учеников — бонусы суммируются\n\n"
+        "🧑‍🎓 <b>Что получает ученик:</b>\n"
+        "• Наставник видит твой прогресс и уровень\n"
+        "• Мотивация и соревновательный элемент\n\n"
+        "🔗 <b>Как найти наставника:</b>\n"
+        "• Попроси опытного коллегу поделиться его ссылкой-наставника\n"
+        "• Перейди по ней — он автоматически станет твоим ментором\n\n"
+        "У каждого игрока может быть только один наставник.",
+        parse_mode="HTML", reply_markup=b.as_markup(),
+    )
+    await callback.answer()
+
+
+@router.callback_query(F.data == "game:info:coop")
+async def game_info_coop(callback: CallbackQuery):
+    b = InlineKeyboardBuilder()
+    b.button(text="🤝 Создать квест", callback_data="game:coop_create")
+    b.button(text="◀️ Назад", callback_data="game:coop")
+    b.adjust(1)
+    await callback.message.edit_text(
+        "🤝 <b>СОВМЕСТНЫЙ КВЕСТ — КАК ЭТО РАБОТАЕТ</b>\n\n"
+        "<b>Шаг 1.</b> Ты нажимаешь «Создать квест» — система выбирает случайный вопрос.\n"
+        "<b>Шаг 2.</b> Ты отвечаешь на вопрос прямо сейчас.\n"
+        "<b>Шаг 3.</b> Получаешь ссылку — отправь партнёру.\n"
+        "<b>Шаг 4.</b> Партнёр переходит по ссылке и тоже отвечает на тот же вопрос.\n\n"
+        "🎁 <b>Награды:</b>\n"
+        "🎉 <b>Оба ответили верно:</b> каждый получает 1.5× XP и 1.5× ИР\n"
+        "✅ <b>Только ты ответил верно:</b> обычная награда (×1)\n"
+        "❌ <b>Ты ошибся:</b> наград нет, даже если партнёр ответил верно\n\n"
+        "Один вопрос — два игрока — командный результат! Выбирайте партнёра с умом 😄",
+        parse_mode="HTML", reply_markup=b.as_markup(),
+    )
+    await callback.answer()
+
+
+@router.callback_query(F.data == "game:info:worldmap")
+async def game_info_worldmap(callback: CallbackQuery):
+    b = InlineKeyboardBuilder()
+    b.button(text="◀️ Назад к карте", callback_data="game:worldmap")
+    b.adjust(1)
+    await callback.message.edit_text(
+        "🌍 <b>МИРОВАЯ КАРТА — ЧТО ЭТО</b>\n\n"
+        "Международные компании — элита мировых рынков. Более сложные вопросы и повышенные награды.\n\n"
+        "📍 <b>Доступные локации:</b>\n"
+        "🍎 <b>Apple</b> (AAPL) — 15 квестов, от уровня 20\n"
+        "⚡ <b>Tesla</b> (TSLA) — 15 квестов, от уровня 22\n"
+        "📦 <b>Amazon</b> (AMZN) — 15 квестов, от уровня 25\n\n"
+        "🧠 <b>Тематика вопросов:</b>\n"
+        "• История компаний и ключевые события\n"
+        "• Финансовые показатели и стратегии\n"
+        "• Бизнес-модели и конкурентная среда\n\n"
+        "⚙️ <b>Механика та же</b>, что и для российских компаний:\n"
+        "Проходи квесты → зарабатывай XP, ИР и акции → получай пассивный доход ИР/час.\n\n"
+        "💡 Мировую карту можно проходить и в Легендарном режиме — для двойных наград!",
+        parse_mode="HTML", reply_markup=b.as_markup(),
+    )
+    await callback.answer()
+
+
 # ── Легендарный режим ─────────────────────────────────────────────────────────
 
 @router.callback_query(F.data == "game:legendary")
@@ -2726,6 +2912,7 @@ async def game_legendary_menu(callback: CallbackQuery, state: FSMContext):
         return
     b = InlineKeyboardBuilder()
     b.button(text="⚡ Войти в Легендарный режим", callback_data="game:legendary_confirm")
+    b.button(text="ℹ️ Подробнее о режиме", callback_data="game:info:legendary")
     b.button(text="◀️ Назад", callback_data="game:open")
     b.adjust(1)
     await callback.message.edit_text(
@@ -2886,6 +3073,7 @@ async def game_worldmap(callback: CallbackQuery, state: FSMContext):
             b.button(text=f"{loc['emoji']} {loc['name']}", callback_data=f"game:loc:{loc_id}")
         else:
             b.button(text=f"🔒 {loc['name']} (ур. {loc['min_level']}+)", callback_data="game:worldmap_locked")
+    b.button(text="ℹ️ Что такое Мировая карта?", callback_data="game:info:worldmap")
     b.button(text="◀️ Назад", callback_data="game:map")
     b.adjust(1)
     await callback.message.edit_text(
@@ -3856,6 +4044,7 @@ async def game_guild_menu(callback: CallbackQuery, state: FSMContext):
         b = InlineKeyboardBuilder()
         b.button(text="📊 Рейтинг гильдий", callback_data="game:guild_leaderboard")
         b.button(text="🔑 Пригласить (код: #{code})".replace("{code}", str(guild["id"])), callback_data="game:guild_invite")
+        b.button(text="ℹ️ Как работают гильдии?", callback_data="game:info:guild")
         b.button(text="🚪 Покинуть гильдию", callback_data="game:guild_leave")
         b.button(text="◀️ Назад", callback_data="game:open")
         b.adjust(1)
@@ -3865,6 +4054,7 @@ async def game_guild_menu(callback: CallbackQuery, state: FSMContext):
         b.button(text="⚔️ Создать гильдию", callback_data="game:guild_create")
         b.button(text="🔑 Вступить по коду", callback_data="game:guild_join")
         b.button(text="📊 Рейтинг гильдий", callback_data="game:guild_leaderboard")
+        b.button(text="ℹ️ Как работают гильдии?", callback_data="game:info:guild")
         b.button(text="◀️ Назад", callback_data="game:open")
         b.adjust(1)
         await callback.message.edit_text(
@@ -4076,6 +4266,7 @@ async def game_duel_menu(callback: CallbackQuery, state: FSMContext):
         return
     b = InlineKeyboardBuilder()
     b.button(text="⚔️ Создать дуэль", callback_data="game:duel_create")
+    b.button(text="ℹ️ Как работает дуэль?", callback_data="game:info:duel")
     b.button(text="◀️ Назад", callback_data="game:open")
     b.adjust(1)
     await callback.message.edit_text(
@@ -4236,6 +4427,7 @@ async def game_mentor_menu(callback: CallbackQuery):
     lines.append(f"\n🔗 <b>Ссылка для учеников:</b>\n<code>{invite_link}</code>")
 
     b = InlineKeyboardBuilder()
+    b.button(text="ℹ️ Как работает наставничество?", callback_data="game:info:mentor")
     b.button(text="◀️ Назад", callback_data="game:open")
     b.adjust(1)
     await callback.message.edit_text("\n".join(lines), parse_mode="HTML", reply_markup=b.as_markup())
@@ -4254,6 +4446,27 @@ def _pick_random_quest() -> tuple[str, str, dict]:
 
 
 @router.callback_query(F.data == "game:coop")
+async def game_coop_intro(callback: CallbackQuery):
+    if callback.from_user.id not in ADMIN_IDS:
+        await callback.answer("⛔ Доступ закрыт", show_alert=True)
+        return
+    b = InlineKeyboardBuilder()
+    b.button(text="🤝 Создать совместный квест", callback_data="game:coop_create")
+    b.button(text="ℹ️ Как это работает?", callback_data="game:info:coop")
+    b.button(text="◀️ Назад", callback_data="game:open")
+    b.adjust(1)
+    await callback.message.edit_text(
+        "🤝 <b>СОВМЕСТНЫЙ КВЕСТ</b>\n\n"
+        "Реши инвестиционную задачу вместе с коллегой!\n\n"
+        "• Ты и партнёр отвечаете на один вопрос независимо\n"
+        "• Если оба ответили верно — каждый получает <b>1.5× награду</b>\n"
+        "• Нажми «Создать» — ответь на вопрос и отправь ссылку партнёру",
+        parse_mode="HTML", reply_markup=b.as_markup(),
+    )
+    await callback.answer()
+
+
+@router.callback_query(F.data == "game:coop_create")
 async def game_coop_menu(callback: CallbackQuery, state: FSMContext):
     if callback.from_user.id not in ADMIN_IDS:
         await callback.answer("⛔ Доступ закрыт", show_alert=True)
