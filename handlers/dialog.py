@@ -116,6 +116,8 @@ async def handle_voice(message: Message, state: FSMContext):
 
 @router.message(Training.in_dialog, ~F.voice)
 async def handle_non_voice(message: Message):
+    if message.text and message.text.startswith("/"):
+        return
     await message.answer(
         "🎙 Пожалуйста, отправьте <b>голосовое сообщение</b> с вашим ответом.",
         parse_mode="HTML",

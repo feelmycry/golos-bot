@@ -42,6 +42,61 @@ STAGE_NAMES = {
     "full": "Полная встреча (все этапы)",
 }
 
+STAGE_ORDER = ["greeting", "needs", "presentation", "objections", "closing"]
+
+STAGE_OPENING_TRIGGERS = {
+    "greeting": "Начни диалог — поздоровайся и кратко озвучь свою задачу (1–2 предложения).",
+    "needs": "Ты уже поздоровался с сотрудником. Скажи короткую фразу — жди его вопросов.",
+    "presentation": "Ты уже познакомился с сотрудником и рассказал о своих целях. Скажи короткую фразу — жди его предложения.",
+    "objections": "Ты выслушал презентацию продукта. Скажи короткую фразу — вырази первое сомнение или уточняющий вопрос.",
+    "closing": "Ты выслушал все аргументы сотрудника. Скажи короткую фразу — ты почти убеждён, но хочешь финальные гарантии.",
+    "full": "Начни диалог — поздоровайся и кратко озвучь свою задачу (1–2 предложения).",
+}
+
+
+def _prior_stages_text(profile: dict, stage: str, product: str | None) -> str:
+    idx = STAGE_ORDER.index(stage) if stage in STAGE_ORDER else -1
+    if idx <= 0:
+        return ""
+
+    prior = STAGE_ORDER[:idx]
+    name = profile["name"]
+    product_name = PRODUCT_INFO[product][0] if product and product in PRODUCT_INFO else "продукт"
+    purpose = profile.get("purpose", "уточнить условия по счёту")
+
+    parts = []
+
+    if "greeting" in prior:
+        parts.append(
+            f"Вы поздоровались с {name} и представились. "
+            f"Клиент вступил в разговор."
+        )
+
+    if "needs" in prior:
+        parts.append(
+            f"Затем вы выяснили потребности: цель визита — {purpose}. "
+            f"Клиент рассказал, что хочет разобраться, что делать с имеющимися накоплениями."
+        )
+
+    if "presentation" in prior:
+        parts.append(
+            f"Вы провели презентацию продукта ({product_name}). "
+            f"Клиент слушал внимательно и задал несколько вопросов о доходности и условиях."
+        )
+
+    if "objections" in prior:
+        parts.append(
+            f"Вы разобрали возражения клиента: сомнения касались сроков вложений и гарантий. "
+            f"После ваших ответов {name} стал более уверен в продукте."
+        )
+
+    return " ".join(parts)
+
+
+def build_prior_stages_context(profile: dict, stage: str, product: str | None) -> str:
+    """Returns a user-facing summary of what happened in stages prior to the selected one."""
+    return _prior_stages_text(profile, stage, product)
+
 COHORT_PERSONA = {
     "young": (
         "Ты молодой человек. Разбираешься в технологиях, слышал про инвестиции, "
@@ -111,6 +166,15 @@ def build_client_prompt(profile: dict, stage: str, product: str | None) -> str:
 
     products_str = profile.get("products", "нет банковских карт")
 
+    prior_ctx = _prior_stages_text(profile, stage, product)
+    prior_section = ""
+    if prior_ctx:
+        prior_section = (
+            f"\nКОНТЕКСТ ПРЕДЫДУЩИХ ЭТАПОВ (что уже произошло до этого момента):\n"
+            f"{prior_ctx}\n"
+            f"Веди себя так, как будто эти этапы уже прошли — не начинай заново с приветствия.\n"
+        )
+
     return f"""Ты играешь роль клиента банка Альфа-Банк в учебной ролевой игре для тренинга сотрудников.
 
 ПРОФИЛЬ КЛИЕНТА:
@@ -123,7 +187,7 @@ def build_client_prompt(profile: dict, stage: str, product: str | None) -> str:
 {product_line}
 ХАРАКТЕР И ВОЗРАСТНАЯ ГРУППА:
 {cohort_persona}
-
+{prior_section}
 КОНТЕКСТ СЦЕНЫ:
 {stage_ctx}
 

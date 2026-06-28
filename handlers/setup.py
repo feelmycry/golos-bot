@@ -8,6 +8,7 @@ from services.client_gen import generate_client
 from services.claude import get_opening_message
 from services.db import upsert_user, create_session, update_messages
 from services.photos import fetch_photos
+from prompts.templates import build_prior_stages_context, STAGE_NAMES
 
 router = Router()
 
@@ -211,6 +212,16 @@ async def choose_cohort(callback: CallbackQuery, state: FSMContext):
 
     stage = data["target_stage"]
     product = data.get("product")
+
+    prior_context = build_prior_stages_context(profile, stage, product)
+    if prior_context:
+        stage_label = STAGE_NAMES.get(stage, stage)
+        await callback.message.answer(
+            f"📋 <b>Контекст встречи</b>\n\n"
+            f"<i>{prior_context}</i>\n\n"
+            f"➡️ Ваша задача сейчас: <b>{stage_label}</b>",
+            parse_mode="HTML",
+        )
 
     try:
         opening = await get_opening_message(profile, stage, product)

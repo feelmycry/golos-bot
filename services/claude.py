@@ -4,6 +4,7 @@ from prompts.templates import (
     build_client_prompt,
     build_feedback_prompt,
     build_summary_prompt,
+    STAGE_OPENING_TRIGGERS,
 )
 
 _client: AsyncAnthropic | None = None
@@ -33,11 +34,12 @@ def _to_claude_messages(messages: list) -> list:
 
 async def get_opening_message(profile: dict, stage: str, product: str | None) -> str:
     system = build_client_prompt(profile, stage, product)
+    trigger = STAGE_OPENING_TRIGGERS.get(stage, _OPENING_TRIGGER)
     response = await _get_client().messages.create(
         model="claude-sonnet-4-6",
         max_tokens=200,
         system=system,
-        messages=[{"role": "user", "content": _OPENING_TRIGGER}],
+        messages=[{"role": "user", "content": trigger}],
     )
     return response.content[0].text.strip()
 
