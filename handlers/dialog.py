@@ -65,6 +65,9 @@ async def handle_voice(message: Message, state: FSMContext):
     session_id: int = data["session_id"]
     msg_count: int = data.get("msg_count", 0) + 1
     photo_urls: list = data.get("photo_urls", [])
+    difficulty: str = data.get("difficulty", "medium")
+    mode: str = data.get("mode", "full")
+    hidden_product: str | None = data.get("hidden_product")
 
     status = await message.answer("🎧 Распознаю голос...")
 
@@ -92,7 +95,7 @@ async def handle_voice(message: Message, state: FSMContext):
     await status.edit_text("🤔 Клиент думает...")
 
     try:
-        client_reply = await continue_dialog(profile, stage, messages, product)
+        client_reply = await continue_dialog(profile, stage, messages, product, difficulty, mode, hidden_product)
     except Exception as e:
         await status.edit_text(f"❌ Ошибка AI: {e}")
         return
@@ -131,6 +134,8 @@ async def handle_hint(callback: CallbackQuery, state: FSMContext):
     messages: list = data["messages"]
     stage: str = data["target_stage"]
     product: str | None = data.get("product")
+    mode: str = data.get("mode", "full")
+    hidden_product: str | None = data.get("hidden_product")
 
     last_employee = next(
         (m["content"] for m in reversed(messages) if m["role"] == "employee"),
@@ -144,7 +149,7 @@ async def handle_hint(callback: CallbackQuery, state: FSMContext):
     hint_msg = await callback.message.answer("💡 Анализирую ваш ответ...")
 
     try:
-        feedback = await get_feedback(messages, last_employee, stage, product)
+        feedback = await get_feedback(messages, last_employee, stage, product, mode, hidden_product)
         await hint_msg.edit_text(
             f"💡 <b>Подсказка тренера:</b>\n\n{feedback}",
             parse_mode="HTML",
@@ -161,6 +166,8 @@ async def handle_end(callback: CallbackQuery, state: FSMContext):
     product: str | None = data.get("product")
     profile: dict = data["client_profile"]
     session_id: int = data["session_id"]
+    mode: str = data.get("mode", "full")
+    hidden_product: str | None = data.get("hidden_product")
 
     employee_turns = [m for m in messages if m["role"] == "employee"]
     if not employee_turns:
@@ -171,7 +178,7 @@ async def handle_end(callback: CallbackQuery, state: FSMContext):
     summary_msg = await callback.message.answer("📊 Готовлю итоговый анализ...")
 
     try:
-        summary = await get_session_summary(messages, stage, product, profile)
+        summary = await get_session_summary(messages, stage, product, profile, mode, hidden_product)
         await complete_session(session_id, summary)
         await summary_msg.edit_text(
             f"🏁 <b>Сессия завершена!</b>\n\n{summary}",

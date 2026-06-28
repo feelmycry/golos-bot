@@ -1,3 +1,5 @@
+import random
+
 from aiogram import Router, F
 from aiogram.types import CallbackQuery
 from aiogram.fsm.context import FSMContext
@@ -8,7 +10,7 @@ from services.client_gen import generate_client
 from services.claude import get_opening_message
 from services.db import upsert_user, create_session, update_messages
 from services.photos import fetch_photos
-from prompts.templates import build_prior_stages_context, STAGE_NAMES
+from prompts.templates import build_prior_stages_context, STAGE_NAMES, PRODUCT_INFO
 
 router = Router()
 
@@ -38,6 +40,16 @@ def _mode_kb():
     b = InlineKeyboardBuilder()
     b.button(text="🎯 Полная встреча", callback_data="mode:full")
     b.button(text="📍 Конкретный этап", callback_data="mode:stage")
+    b.button(text="🔍 Подобрать продукт клиенту", callback_data="mode:identify")
+    b.adjust(1)
+    return b.as_markup()
+
+
+def _difficulty_kb():
+    b = InlineKeyboardBuilder()
+    b.button(text="😊 Лёгкий — клиент открыт и позитивен", callback_data="difficulty:easy")
+    b.button(text="😐 Средний — реалистичный клиент", callback_data="difficulty:medium")
+    b.button(text="😤 Сложный — скептик, закрытый, с возражениями", callback_data="difficulty:hard")
     b.adjust(1)
     return b.as_markup()
 
@@ -119,6 +131,17 @@ async def choose_mode(callback: CallbackQuery, state: FSMContext):
             reply_markup=_product_kb(),
         )
         await state.set_state(Training.choosing_product)
+    elif mode == "identify":
+        await state.update_data(target_stage="full", product=None)
+        await callback.message.edit_text(
+            "🔍 <b>Подбор продукта</b>\n\n"
+            "Продукт не задан заранее — вы должны <b>выявить потребность</b> клиента "
+            "и самостоятельно определить, что ему подойдёт.\n\n"
+            "Выберите когортную группу клиента:",
+            parse_mode="HTML",
+            reply_markup=_cohort_kb(),
+        )
+        await state.set_state(Training.choosing_cohort)
     else:
         await callback.message.edit_text("Выберите этап для отработки:", reply_markup=_stage_kb())
         await state.set_state(Training.choosing_stage)
@@ -162,16 +185,38 @@ async def choose_product(callback: CallbackQuery, state: FSMContext):
 @router.callback_query(Training.choosing_cohort, F.data.startswith("cohort:"))
 async def choose_cohort(callback: CallbackQuery, state: FSMContext):
     cohort = callback.data.split(":")[1]
+    await state.update_data(cohort=cohort)
+    await callback.message.edit_text(
+        "Выберите уровень сложности клиента:",
+        reply_markup=_difficulty_kb(),
+    )
+    await state.set_state(Training.choosing_difficulty)
+    await callback.answer()
+
+
+@router.callback_query(Training.choosing_difficulty, F.data.startswith("difficulty:"))
+async def choose_difficulty(callback: CallbackQuery, state: FSMContext):
+    difficulty = callback.data.split(":")[1]
+    await state.update_data(difficulty=difficulty)
     data = await state.get_data()
 
+    cohort = data["cohort"]
+    mode = data["mode"]
+
+    # In identify mode: randomly assign a hidden product the client's situation maps to
+    hidden_product = None
+    if mode == "identify":
+        hidden_product = random.choice(list(PRODUCT_INFO.keys()))
+        await state.update_data(hidden_product=hidden_product)
+
     profile = generate_client(cohort, data["scenario"])
-    await state.update_data(cohort=cohort, client_profile=profile, messages=[], msg_count=0)
+    await state.update_data(client_profile=profile, messages=[], msg_count=0)
 
     await upsert_user(callback.from_user.id, callback.from_user.username, callback.from_user.first_name)
     session_id = await create_session(
         user_id=callback.from_user.id,
         scenario=data["scenario"],
-        mode=data["mode"],
+        mode=mode,
         stage=data["target_stage"],
         product=data.get("product"),
         cohort=cohort,
@@ -181,14 +226,19 @@ async def choose_cohort(callback: CallbackQuery, state: FSMContext):
 
     await callback.message.edit_text("⏳ Подбираю клиента и фото...")
 
-    # Fetch photos — store URLs list for reuse in dialog
     photo_urls = await fetch_photos(cohort, profile["gender"])
     await state.update_data(photo_urls=photo_urls)
 
-    # Build card text
-    formatted_balance = f"{profile['balance']:,}".replace(",", " ")
-    products_line = f"🏦 <b>Продукты:</b> {profile['products']}" if profile.get("products") else "🏦 <b>Продукты:</b> нет банковских карт"
+    formatted_balance = f"{profile['balance']:,}".replace(",", " ")
+    products_line = (
+        f"🏦 <b>Продукты:</b> {profile['products']}"
+        if profile.get("products")
+        else "🏦 <b>Продукты:</b> нет банковских карт"
+    )
     mood_emoji = _MOOD_EMOJI.get(profile["mood"], "😶")
+
+    difficulty_labels = {"easy": "😊 Лёгкий", "medium": "😐 Средний", "hard": "😤 Сложный"}
+    difficulty_label = difficulty_labels.get(difficulty, difficulty)
 
     card = (
         f"👤 <b>Карточка клиента</b>\n\n"
@@ -197,10 +247,10 @@ async def choose_cohort(callback: CallbackQuery, state: FSMContext):
         f"{products_line}\n\n"
         f"👁 <i>{profile['appearance']}</i>\n"
         f"{mood_emoji} <b>Настроение:</b> {profile['mood']}\n\n"
-        f"📋 <b>Цель визита:</b> {profile['purpose']}"
+        f"📋 <b>Цель визита:</b> {profile['purpose']}\n\n"
+        f"⚙️ <b>Сложность:</b> {difficulty_label}"
     )
 
-    # Show card with photo if available
     if photo_urls:
         try:
             await callback.message.answer_photo(photo=photo_urls[0], caption=card, parse_mode="HTML")
@@ -213,18 +263,27 @@ async def choose_cohort(callback: CallbackQuery, state: FSMContext):
     stage = data["target_stage"]
     product = data.get("product")
 
-    prior_context = build_prior_stages_context(profile, stage, product)
-    if prior_context:
-        stage_label = STAGE_NAMES.get(stage, stage)
+    if mode == "identify":
         await callback.message.answer(
-            f"📋 <b>Контекст встречи</b>\n\n"
-            f"<i>{prior_context}</i>\n\n"
-            f"➡️ Ваша задача сейчас: <b>{stage_label}</b>",
+            "🔍 <b>Режим: Подбор продукта</b>\n\n"
+            "Задавайте вопросы, выявляйте потребности клиента "
+            "и определите, какой продукт ему подойдёт.\n"
+            "<i>Правильный ответ будет раскрыт в итоговой оценке.</i>",
             parse_mode="HTML",
         )
+    else:
+        prior_context = build_prior_stages_context(profile, stage, product)
+        if prior_context:
+            stage_label = STAGE_NAMES.get(stage, stage)
+            await callback.message.answer(
+                f"📋 <b>Контекст встречи</b>\n\n"
+                f"<i>{prior_context}</i>\n\n"
+                f"➡️ Ваша задача сейчас: <b>{stage_label}</b>",
+                parse_mode="HTML",
+            )
 
     try:
-        opening = await get_opening_message(profile, stage, product)
+        opening = await get_opening_message(profile, stage, product, difficulty, mode, hidden_product)
     except Exception as e:
         await callback.message.answer(f"❌ Ошибка AI: {e}")
         return

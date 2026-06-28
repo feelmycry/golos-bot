@@ -97,6 +97,67 @@ def build_prior_stages_context(profile: dict, stage: str, product: str | None) -
     """Returns a user-facing summary of what happened in stages prior to the selected one."""
     return _prior_stages_text(profile, stage, product)
 
+
+DIFFICULTY_MODIFIER = {
+    "easy": (
+        "УРОВЕНЬ СЛОЖНОСТИ: ЛЁГКИЙ\n"
+        "Ты открыт и настроен позитивно. Охотно отвечаешь на вопросы, не скрываешь свои цели. "
+        "Если сотрудник задаёт правильные вопросы — откликаешься сразу. "
+        "Возражения у тебя есть, но они мягкие и легко снимаются хорошим аргументом."
+    ),
+    "medium": (
+        "УРОВЕНЬ СЛОЖНОСТИ: СРЕДНИЙ\n"
+        "Ты ведёшь себя как обычный клиент. Отвечаешь на вопросы, но не торопишься выдавать "
+        "всю информацию сразу. Есть разумные сомнения. "
+        "Если сотрудник профессионален и внимателен — постепенно открываешься."
+    ),
+    "hard": (
+        "УРОВЕНЬ СЛОЖНОСТИ: СЛОЖНЫЙ\n"
+        "Ты закрыт и скептичен. Изначально не настроен на долгий разговор. "
+        "Отвечаешь коротко и уклончиво. Часто говоришь 'мне надо подумать', 'я просто смотрю', "
+        "'в Сбере мне предложили лучше', 'я уже обжигался на таких предложениях'. "
+        "Не доверяешь банковским предложениям с ходу. Возражения у тебя сильные и конкретные. "
+        "Только если сотрудник проявит настоящее внимание к твоим нуждам — начнёшь открываться."
+    ),
+}
+
+IDENTIFY_SITUATIONS = {
+    "pds": (
+        "Ты думаешь о пенсии: хочешь иметь дополнительный доход когда выйдешь на заслуженный отдых. "
+        "Слышал что-то про государственные программы, интересует надёжность и налоговые льготы. "
+        "Горизонт долгосрочный, от 10–15 лет. Готов откладывать небольшую сумму регулярно. "
+        "Риски не приветствуешь — важны гарантии."
+    ),
+    "nsj": (
+        "У тебя есть семья, ты хочешь одновременно защитить их финансово на случай непредвиденного "
+        "и накопить определённую сумму к конкретной дате (лет через 5–10). "
+        "Важна страховая составляющая — чтобы если что-то случится, семья была защищена. "
+        "Доходность интересует, но она вторична по отношению к надёжности."
+    ),
+    "opif": (
+        "У тебя есть свободные деньги, которые хочешь 'запустить в работу'. "
+        "Депозит кажется маловато доходным — хочется чуть больше. "
+        "При этом важна ликвидность — чтобы деньги можно было забрать когда нужно. "
+        "Самому разбираться в акциях и облигациях не хочешь — пусть профессионалы управляют."
+    ),
+    "oms": (
+        "Ты переживаешь за инфляцию и нестабильность рубля. Слышал про золото как защиту сбережений. "
+        "Хочешь вложить часть денег во что-то материальное и надёжное — не в бумаги. "
+        "Физически хранить металл у себя дома не хочешь — неудобно и опасно."
+    ),
+    "strategy": (
+        "Ты хочешь получить высокую доходность и готов к умеренному риску ради этого. "
+        "Слышал про биржу и трейдинг, но самому разбираться нет ни времени, ни желания. "
+        "Хочешь чтобы кто-то опытный управлял, а ты просто видел результат. "
+        "Есть свободная сумма, которую не жалко 'поставить на рост'."
+    ),
+    "portfolio": (
+        "У тебя накопилась крупная сумма и ты понимаешь, что 'класть всё в одну корзину' неправильно. "
+        "Хочешь разделить: часть — понадёжнее и с доступом в любой момент, часть — на хорошую доходность, "
+        "часть — на старость. Нужен комплексный подход, а не один инструмент."
+    ),
+}
+
 COHORT_PERSONA = {
     "young": (
         "Ты молодой человек. Разбираешься в технологиях, слышал про инвестиции, "
@@ -155,14 +216,30 @@ STAGE_CONTEXT = {
 }
 
 
-def build_client_prompt(profile: dict, stage: str, product: str | None) -> str:
+def build_client_prompt(
+    profile: dict,
+    stage: str,
+    product: str | None,
+    difficulty: str = "medium",
+    mode: str = "full",
+    hidden_product: str | None = None,
+) -> str:
     cohort_persona = COHORT_PERSONA.get(profile["cohort"], "")
-    stage_ctx = STAGE_CONTEXT.get(stage, "")
+    stage_ctx = STAGE_CONTEXT.get(stage, STAGE_CONTEXT["full"])
+    difficulty_text = DIFFICULTY_MODIFIER.get(difficulty, DIFFICULTY_MODIFIER["medium"])
 
-    product_line = ""
-    if product and product in PRODUCT_INFO:
+    if mode == "identify" and hidden_product:
+        situation = IDENTIFY_SITUATIONS.get(hidden_product, "")
+        product_line = (
+            f"\nТВОЯ ФИНАНСОВАЯ СИТУАЦИЯ И ЦЕЛИ:\n{situation}\n"
+            f"ВАЖНО: Ты не знаешь названий банковских продуктов. "
+            f"Описывай только свои цели и ситуацию — НЕ называй конкретные продукты.\n"
+        )
+    elif product and product in PRODUCT_INFO:
         name, desc = PRODUCT_INFO[product]
         product_line = f"\nПРОДУКТ В ФОКУСЕ: {name}\nКлючевые факты: {desc}\n"
+    else:
+        product_line = ""
 
     products_str = profile.get("products", "нет банковских карт")
 
@@ -187,6 +264,8 @@ def build_client_prompt(profile: dict, stage: str, product: str | None) -> str:
 {product_line}
 ХАРАКТЕР И ВОЗРАСТНАЯ ГРУППА:
 {cohort_persona}
+
+{difficulty_text}
 {prior_section}
 КОНТЕКСТ СЦЕНЫ:
 {stage_ctx}
@@ -201,9 +280,24 @@ def build_client_prompt(profile: dict, stage: str, product: str | None) -> str:
 7. Если сотрудник внимателен и профессионален — постепенно открывайся""".replace(",", ",")
 
 
-def build_feedback_prompt(messages: list, last_employee: str, stage: str, product: str | None) -> str:
+def build_feedback_prompt(
+    messages: list,
+    last_employee: str,
+    stage: str,
+    product: str | None,
+    mode: str = "full",
+    hidden_product: str | None = None,
+) -> str:
     stage_name = STAGE_NAMES.get(stage, stage)
-    product_name = PRODUCT_INFO[product][0] if product and product in PRODUCT_INFO else "не выбран"
+
+    if mode == "identify":
+        product_line = (
+            "Режим: ПОДБОР ПРОДУКТА — сотрудник должен выявить потребность клиента "
+            "и самостоятельно определить подходящий продукт."
+        )
+    else:
+        product_name = PRODUCT_INFO[product][0] if product and product in PRODUCT_INFO else "не выбран"
+        product_line = f"Продукт: {product_name}"
 
     history_lines = []
     for msg in messages[-10:]:
@@ -211,11 +305,24 @@ def build_feedback_prompt(messages: list, last_employee: str, stage: str, produc
         history_lines.append(f"{role}: {msg['content']}")
     history = "\n".join(history_lines)
 
+    if mode == "identify":
+        task = (
+            "Оцени: задаёт ли сотрудник правильные вопросы для выявления потребности? "
+            "Слышит ли клиента? Движется ли к пониманию что нужно клиенту?"
+        )
+    else:
+        task = (
+            "Дай краткий фидбек (3–5 предложений) по структуре:\n"
+            "1. Что сделано хорошо?\n"
+            "2. Что улучшить? (конкретно, с примером как лучше сказать)\n"
+            "3. Оценка этого ответа: X/10"
+        )
+
     return f"""Ты — опытный тренер по продажам инвестиционных продуктов Альфа-Банка.
 
 ПАРАМЕТРЫ ТРЕНИРОВКИ:
 - Этап: {stage_name}
-- Продукт: {product_name}
+- {product_line}
 
 ПОСЛЕДНИЕ РЕПЛИКИ:
 {history}
@@ -223,17 +330,20 @@ def build_feedback_prompt(messages: list, last_employee: str, stage: str, produc
 ОТВЕТ СОТРУДНИКА ДЛЯ ОЦЕНКИ:
 "{last_employee}"
 
-Дай краткий фидбек (3–5 предложений) по структуре:
-1. Что сделано хорошо?
-2. Что улучшить? (конкретно, с примером как лучше сказать)
-3. Оценка этого ответа: X/10
+{task}
 
 Пиши по-русски, по-дружески, как наставник."""
 
 
-def build_summary_prompt(messages: list, stage: str, product: str | None, profile: dict) -> str:
+def build_summary_prompt(
+    messages: list,
+    stage: str,
+    product: str | None,
+    profile: dict,
+    mode: str = "full",
+    hidden_product: str | None = None,
+) -> str:
     stage_name = STAGE_NAMES.get(stage, stage)
-    product_name = PRODUCT_INFO[product][0] if product and product in PRODUCT_INFO else "не выбран"
     cohort_labels = {
         "young": "Молодой (до 35)",
         "middle": "Средний возраст (35–50)",
@@ -248,30 +358,34 @@ def build_summary_prompt(messages: list, stage: str, product: str | None, profil
         history_lines.append(f"{role}: {msg['content']}")
     history = "\n".join(history_lines)
 
+    if mode == "identify" and hidden_product:
+        correct_name = PRODUCT_INFO[hidden_product][0] if hidden_product in PRODUCT_INFO else "?"
+        product_block = f"- Режим: ПОДБОР ПРОДУКТА\n- Правильный продукт для этого клиента: {correct_name}"
+        task = (
+            f"ВАЖНО: Правильный продукт для этого клиента — {correct_name}.\n"
+            "Оцени:\n"
+            "1. Правильно ли сотрудник определил потребность клиента?\n"
+            "2. Порекомендовал ли он верный продукт (или близкий)?\n"
+            "3. Если не угадал — объясни почему именно этот продукт подходит клиенту.\n"
+            "Дай итоговую оценку в обычном формате (Оценка X/10, что хорошо, что улучшить)."
+        )
+    else:
+        product_name = PRODUCT_INFO[product][0] if product and product in PRODUCT_INFO else "не выбран"
+        product_block = f"- Этап: {stage_name}\n- Продукт: {product_name}"
+        task = "Дай итоговую оценку в таком формате:\n\nОценка: X/10\n\nЧто получилось хорошо:\n• ...\n\nЧто нужно улучшить:\n• ...\n\nРекомендация на следующую тренировку:\n..."
+
     return f"""Ты — опытный тренер по продажам инвестиционных продуктов Альфа-Банка.
 
 Сотрудник завершил тренировочную сессию. Проанализируй весь диалог.
 
 ПАРАМЕТРЫ СЕССИИ:
-- Этап: {stage_name}
-- Продукт: {product_name}
+{product_block}
 - Тип клиента: {cohort_name}
 - Клиент: {profile.get("name", "")}
 
 ПОЛНЫЙ ДИАЛОГ:
 {history}
 
-Дай итоговую оценку в таком формате:
-
-Оценка: X/10
-
-Что получилось хорошо:
-• ...
-
-Что нужно улучшить:
-• ...
-
-Рекомендация на следующую тренировку:
-...
+{task}
 
 Пиши по-русски, конкретно и мотивирующе."""

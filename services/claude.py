@@ -32,8 +32,15 @@ def _to_claude_messages(messages: list) -> list:
     return result
 
 
-async def get_opening_message(profile: dict, stage: str, product: str | None) -> str:
-    system = build_client_prompt(profile, stage, product)
+async def get_opening_message(
+    profile: dict,
+    stage: str,
+    product: str | None,
+    difficulty: str = "medium",
+    mode: str = "full",
+    hidden_product: str | None = None,
+) -> str:
+    system = build_client_prompt(profile, stage, product, difficulty, mode, hidden_product)
     trigger = STAGE_OPENING_TRIGGERS.get(stage, _OPENING_TRIGGER)
     response = await _get_client().messages.create(
         model="claude-sonnet-4-6",
@@ -49,12 +56,11 @@ async def continue_dialog(
     stage: str,
     messages: list,
     product: str | None,
+    difficulty: str = "medium",
+    mode: str = "full",
+    hidden_product: str | None = None,
 ) -> str:
-    """
-    messages already includes the latest employee message at the end.
-    Claude will respond as the client.
-    """
-    system = build_client_prompt(profile, stage, product)
+    system = build_client_prompt(profile, stage, product, difficulty, mode, hidden_product)
     claude_msgs = _to_claude_messages(messages)
     response = await _get_client().messages.create(
         model="claude-sonnet-4-6",
@@ -70,8 +76,10 @@ async def get_feedback(
     last_employee: str,
     stage: str,
     product: str | None,
+    mode: str = "full",
+    hidden_product: str | None = None,
 ) -> str:
-    prompt = build_feedback_prompt(messages, last_employee, stage, product)
+    prompt = build_feedback_prompt(messages, last_employee, stage, product, mode, hidden_product)
     response = await _get_client().messages.create(
         model="claude-sonnet-4-6",
         max_tokens=500,
@@ -85,8 +93,10 @@ async def get_session_summary(
     stage: str,
     product: str | None,
     profile: dict,
+    mode: str = "full",
+    hidden_product: str | None = None,
 ) -> str:
-    prompt = build_summary_prompt(messages, stage, product, profile)
+    prompt = build_summary_prompt(messages, stage, product, profile, mode, hidden_product)
     response = await _get_client().messages.create(
         model="claude-sonnet-4-6",
         max_tokens=800,

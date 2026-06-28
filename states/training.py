@@ -7,4 +7,5 @@ class Training(StatesGroup):
     choosing_stage = State()
     choosing_product = State()
     choosing_cohort = State()
+    choosing_difficulty = State()
     in_dialog = State()
