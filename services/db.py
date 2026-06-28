@@ -96,6 +96,7 @@ async def init_db() -> None:
             "hint_charges INTEGER DEFAULT 0",
             "xp_boost_charges INTEGER DEFAULT 0",
             "onboarded INTEGER DEFAULT 0",
+            "streak_reminded_date TEXT",
         ):
             try:
                 await db.execute(f"ALTER TABLE game_players ADD COLUMN {col}")
@@ -973,15 +974,26 @@ async def game_get_guild_members(guild_id: int) -> list[dict]:
 # ── Streak notification helpers ───────────────────────────────────────────────
 
 async def game_get_streak_reminder_users() -> list[dict]:
-    """Users with streak > 0 who haven't been active for 20-23 hours."""
+    """Users with streak > 0 who haven't been active for 20-23 hours and haven't been reminded today."""
     async with aiosqlite.connect(DB_PATH) as db:
         db.row_factory = aiosqlite.Row
         cur = await db.execute(
             """SELECT user_id, streak_days, last_active FROM game_players
                WHERE streak_days > 0 AND last_active IS NOT NULL
-               AND CAST((julianday('now') - julianday(last_active)) * 24 AS INTEGER) BETWEEN 20 AND 23"""
+               AND CAST((julianday('now') - julianday(last_active)) * 24 AS INTEGER) BETWEEN 20 AND 23
+               AND (streak_reminded_date IS NULL OR streak_reminded_date != date('now'))"""
         )
         return [dict(r) for r in await cur.fetchall()]
+
+
+async def game_mark_streak_reminded(user_id: int) -> None:
+    """Record that a streak reminder was sent today so it won't be sent again."""
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.execute(
+            "UPDATE game_players SET streak_reminded_date = date('now') WHERE user_id = ?",
+            (user_id,),
+        )
+        await db.commit()
 
 
 # ── Duel functions ────────────────────────────────────────────────────────────

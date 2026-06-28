@@ -43,6 +43,7 @@ from services.db import (
     game_get_completed_scenarios,
     game_save_scenario_result,
     game_get_streak_reminder_users,
+    game_mark_streak_reminded,
     game_apply_legendary_penalty,
     game_create_guild,
     game_join_guild,
@@ -4251,6 +4252,7 @@ async def streak_reminder_task(bot) -> None:
                         f"Зайди в игру — пройди хотя бы один квест чтобы сохранить серию.",
                         parse_mode="HTML",
                     )
+                    await game_mark_streak_reminded(u["user_id"])
                 except Exception:
                     pass
         except Exception:
