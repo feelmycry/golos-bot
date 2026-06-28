@@ -9,7 +9,7 @@ from aiogram.utils.keyboard import InlineKeyboardBuilder
 from states.training import Training
 from services.whisper import transcribe_voice
 from services.claude import continue_dialog, get_feedback, get_session_summary
-from services.db import update_messages, complete_session
+from services.db import update_messages, complete_session, get_user_stats
 
 router = Router()
 
@@ -68,6 +68,7 @@ async def handle_voice(message: Message, state: FSMContext):
     difficulty: str = data.get("difficulty", "medium")
     mode: str = data.get("mode", "full")
     hidden_product: str | None = data.get("hidden_product")
+    objection_text: str | None = data.get("objection_text")
 
     status = await message.answer("🎧 Распознаю голос...")
 
@@ -95,7 +96,7 @@ async def handle_voice(message: Message, state: FSMContext):
     await status.edit_text("🤔 Клиент думает...")
 
     try:
-        client_reply = await continue_dialog(profile, stage, messages, product, difficulty, mode, hidden_product)
+        client_reply = await continue_dialog(profile, stage, messages, product, difficulty, mode, hidden_product, objection_text)
     except Exception as e:
         await status.edit_text(f"❌ Ошибка AI: {e}")
         return
@@ -180,8 +181,21 @@ async def handle_end(callback: CallbackQuery, state: FSMContext):
     try:
         summary = await get_session_summary(messages, stage, product, profile, mode, hidden_product)
         await complete_session(session_id, summary)
+
+        # Adaptive difficulty suggestion
+        difficulty = data.get("difficulty", "medium")
+        tip = ""
+        if difficulty != "hard":
+            user_stats = await get_user_stats(callback.from_user.id)
+            avg = user_stats.get("avg_score")
+            if avg is not None and user_stats["completed"] >= 3:
+                if difficulty == "easy" and avg >= 6.5:
+                    tip = "\n\n💡 <i>Ваш средний балл растёт! Попробуйте <b>Средний</b> уровень сложности.</i>"
+                elif difficulty == "medium" and avg >= 7.5:
+                    tip = "\n\n🔥 <i>Отличный результат! Готовы к <b>Сложному</b> уровню?</i>"
+
         await summary_msg.edit_text(
-            f"🏁 <b>Сессия завершена!</b>\n\n{summary}",
+            f"🏁 <b>Сессия завершена!</b>\n\n{summary}{tip}",
             parse_mode="HTML",
             reply_markup=_after_end_kb(),
         )

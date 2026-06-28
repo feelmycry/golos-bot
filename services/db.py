@@ -1,5 +1,6 @@
 import asyncio
 import json
+import re
 import aiosqlite
 from datetime import datetime, date
 from config import DB_PATH
@@ -92,6 +93,10 @@ async def init_db() -> None:
                 PRIMARY KEY (user_id, quest_id)
             )
         """)
+        try:
+            await db.execute("ALTER TABLE sessions ADD COLUMN score REAL")
+        except Exception:
+            pass
         for col in (
             "hint_charges INTEGER DEFAULT 0",
             "xp_boost_charges INTEGER DEFAULT 0",
@@ -234,10 +239,12 @@ async def update_messages(session_id: int, messages: list) -> None:
 
 
 async def complete_session(session_id: int, final_feedback: str) -> None:
+    m = re.search(r'Оценка[:\s]+(\d+(?:[.,]\d+)?)\s*/\s*10', final_feedback)
+    score = float(m.group(1).replace(',', '.')) if m else None
     async with aiosqlite.connect(DB_PATH) as db:
         await db.execute(
-            "UPDATE sessions SET is_complete = 1, completed_at = ?, final_feedback = ? WHERE id = ?",
-            (datetime.now().isoformat(), final_feedback, session_id),
+            "UPDATE sessions SET is_complete = 1, completed_at = ?, final_feedback = ?, score = ? WHERE id = ?",
+            (datetime.now().isoformat(), final_feedback, score, session_id),
         )
         await db.commit()
 
@@ -250,12 +257,13 @@ async def get_admin_stats() -> dict:
         cur = await db.execute("SELECT COUNT(*) AS cnt FROM users")
         total_users = (await cur.fetchone())["cnt"]
 
-        # Users list with session counts
+        # Users list with session counts and avg score
         cur = await db.execute("""
             SELECT u.first_name, u.username, u.telegram_id, u.created_at,
                    u.is_blocked,
                    COUNT(s.id) AS sessions_total,
-                   SUM(s.is_complete) AS sessions_done
+                   SUM(s.is_complete) AS sessions_done,
+                   ROUND(AVG(CASE WHEN s.is_complete=1 AND s.score IS NOT NULL THEN s.score END), 1) AS avg_score
             FROM users u
             LEFT JOIN sessions s ON s.user_id = u.telegram_id
             GROUP BY u.telegram_id
@@ -291,12 +299,13 @@ async def get_admin_stats() -> dict:
         """)
         by_stage = [dict(r) for r in await cur.fetchall()]
 
-        # Product stats
+        # Product stats with avg score
         cur = await db.execute("""
             SELECT product, COUNT(*) cnt, SUM(is_complete) done,
-                   AVG(json_array_length(messages)) avg_msgs
+                   ROUND(AVG(json_array_length(messages)), 1) avg_msgs,
+                   ROUND(AVG(CASE WHEN is_complete=1 AND score IS NOT NULL THEN score END), 1) avg_score
             FROM sessions WHERE product IS NOT NULL
-            GROUP BY product ORDER BY cnt DESC
+            GROUP BY product ORDER BY avg_score ASC
         """)
         by_product = [dict(r) for r in await cur.fetchall()]
 
@@ -391,33 +400,59 @@ async def get_user_stats(user_id: int) -> dict:
         db.row_factory = aiosqlite.Row
 
         cur = await db.execute(
-            "SELECT COUNT(*) AS total, SUM(is_complete) AS completed FROM sessions WHERE user_id = ?",
+            """SELECT COUNT(*) AS total, SUM(is_complete) AS completed,
+                      ROUND(AVG(CASE WHEN is_complete=1 AND score IS NOT NULL THEN score END), 1) AS avg_score
+               FROM sessions WHERE user_id = ?""",
             (user_id,),
         )
         totals = dict(await cur.fetchone())
 
         cur = await db.execute(
-            """SELECT cohort, COUNT(*) AS total, SUM(is_complete) AS completed
-               FROM sessions WHERE user_id = ?
-               GROUP BY cohort""",
+            """SELECT product, COUNT(*) AS total, SUM(is_complete) AS completed,
+                      ROUND(AVG(CASE WHEN is_complete=1 AND score IS NOT NULL THEN score END), 1) AS avg_score
+               FROM sessions WHERE user_id = ? AND product IS NOT NULL
+               GROUP BY product ORDER BY total DESC""",
             (user_id,),
         )
-        by_cohort = [dict(r) for r in await cur.fetchall()]
+        by_product = [dict(r) for r in await cur.fetchall()]
 
         cur = await db.execute(
-            """SELECT stage, COUNT(*) AS total
+            """SELECT stage, COUNT(*) AS total, SUM(is_complete) AS completed
                FROM sessions WHERE user_id = ?
-               GROUP BY stage""",
+               GROUP BY stage ORDER BY total DESC""",
             (user_id,),
         )
         by_stage = [dict(r) for r in await cur.fetchall()]
 
+        cur = await db.execute(
+            """SELECT id, stage, product, mode, score, completed_at,
+                      SUBSTR(final_feedback, 1, 120) AS feedback_preview
+               FROM sessions WHERE user_id = ? AND is_complete = 1
+               ORDER BY completed_at DESC LIMIT 10""",
+            (user_id,),
+        )
+        recent_sessions = [dict(r) for r in await cur.fetchall()]
+
     return {
         "total": totals.get("total") or 0,
         "completed": totals.get("completed") or 0,
-        "by_cohort": by_cohort,
+        "avg_score": totals.get("avg_score"),
+        "by_product": by_product,
         "by_stage": by_stage,
+        "recent_sessions": recent_sessions,
     }
+
+
+async def get_user_session_detail(session_id: int, user_id: int) -> dict | None:
+    async with aiosqlite.connect(DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        cur = await db.execute(
+            """SELECT id, stage, product, mode, score, completed_at, final_feedback
+               FROM sessions WHERE id = ? AND user_id = ? AND is_complete = 1""",
+            (session_id, user_id),
+        )
+        row = await cur.fetchone()
+        return dict(row) if row else None
 
 
 # ── Learning progress ─────────────────────────────────────────────────────────

@@ -62,7 +62,9 @@ async def _send_admin_summary(target):
         name = u["first_name"] or "—"
         uname = f"@{u['username']}" if u["username"] else "без username"
         done = int(u["sessions_done"] or 0)
-        lines.append(f"  • {name} ({uname}) — {u['sessions_total']} сессий, завершено {done}")
+        sc = u.get("avg_score")
+        sc_str = f", ср. балл {sc}/10" if sc else ""
+        lines.append(f"  • {name} ({uname}) — {u['sessions_total']} сессий, завершено {done}{sc_str}")
 
     lines.append(f"\n🗂 <b>Сессии:</b> {st['sess_total']} всего, завершено {int(st['sess_done'] or 0)}")
     if st["avg_duration_min"]:
@@ -78,11 +80,13 @@ async def _send_admin_summary(target):
             lines.append(f"  • <b>{label}</b>: {r['cnt']} сессий, завершено {done}, ~{avg_msgs} сообщ{avg_min}")
 
     if st["by_product"]:
-        lines.append("\n🛍 <b>По продуктам:</b>")
+        lines.append("\n🛍 <b>По продуктам (сортировка: слабейший сначала):</b>")
         for r in st["by_product"]:
             done = int(r["done"] or 0)
             avg_msgs = round(r["avg_msgs"] or 0, 1)
-            lines.append(f"  • {r['product']}: {r['cnt']} сессий, завершено {done}, ~{avg_msgs} сообщ")
+            sc = r.get("avg_score")
+            sc_str = f", ср. балл <b>{sc}/10</b>" if sc else ""
+            lines.append(f"  • {r['product']}: {r['cnt']} сессий, завершено {done}, ~{avg_msgs} сообщ{sc_str}")
 
     if st["by_cohort"]:
         lines.append("\n👤 <b>По когортам клиентов:</b>")

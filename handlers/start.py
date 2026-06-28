@@ -4,7 +4,7 @@ from aiogram.filters import CommandStart, Command, CommandObject
 from aiogram.fsm.context import FSMContext
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 
-from services.db import upsert_user, get_user_stats, game_link_mentor
+from services.db import upsert_user, get_user_stats, get_user_session_detail, game_link_mentor
 
 router = Router()
 
@@ -32,7 +32,7 @@ def _main_kb():
     b.button(text="🌅 Рыночный брифинг", callback_data="briefing:open")
     b.button(text="📈 Анализ акций (в разработке)", callback_data="stock:start")
     b.button(text="📚 Обучение", callback_data="learning:menu")
-    b.button(text="🎮 Игра (в разработке)", callback_data="game:open")
+    b.button(text="🎮 Игра", callback_data="game:open")
     b.adjust(1)
     return b.as_markup()
 
@@ -179,31 +179,137 @@ async def learning_stub(callback: CallbackQuery):
     await callback.answer("🚧 Раздел в разработке — скоро появится!", show_alert=True)
 
 
+_PRODUCT_LABELS = {
+    "pds": "ПДС",
+    "nsj": "НСЖ",
+    "opif": "ОПИФ",
+    "oms": "ОМС",
+    "strategy": "Стратегия",
+    "portfolio": "Портфель",
+    "identify": "Подбор продукта",
+}
+
+_MODE_LABELS = {
+    "full": "Полная встреча",
+    "stage": "Конкретный этап",
+    "identify": "Подбор продукта",
+    "objection": "Отработка возражения",
+}
+
+
+def _score_bar(score: float | None) -> str:
+    if score is None:
+        return "—"
+    filled = round(score)
+    return "█" * filled + "░" * (10 - filled) + f" {score}/10"
+
+
 @router.callback_query(F.data == "show_stats")
 async def show_stats(callback: CallbackQuery):
     stats = await get_user_stats(callback.from_user.id)
 
-    lines = [f"📊 <b>Ваша статистика</b>\n\nВсего сессий: {stats['total']} (завершено: {stats['completed']})"]
+    avg = stats.get("avg_score")
+    avg_str = f"{avg}/10" if avg else "—"
+    lines = [
+        f"📊 <b>Ваша статистика тренировок</b>\n",
+        f"Сессий завершено: <b>{stats['completed']}</b> из {stats['total']}",
+        f"Средний балл: <b>{avg_str}</b>",
+    ]
 
-    if stats["by_cohort"]:
-        lines.append("\n<b>По когортам:</b>")
-        for row in stats["by_cohort"]:
-            label = _COHORT_LABELS.get(row.get("cohort", ""), row.get("cohort", "—"))
-            lines.append(f"• {label}: {row['total']} сессий ({row['completed'] or 0} завершено)")
+    if stats["by_product"]:
+        lines.append("\n<b>По продуктам:</b>")
+        for row in stats["by_product"]:
+            label = _PRODUCT_LABELS.get(row.get("product", ""), row.get("product", "—"))
+            done = int(row.get("completed") or 0)
+            sc = row.get("avg_score")
+            sc_str = f"  ср. балл <b>{sc}/10</b>" if sc else ""
+            lines.append(f"• {label}: {done} сессий{sc_str}")
 
     if stats["by_stage"]:
         lines.append("\n<b>По этапам:</b>")
         for row in stats["by_stage"]:
             label = _STAGE_LABELS.get(row.get("stage", ""), row.get("stage", "—"))
-            lines.append(f"• {label}: {row['total']}")
+            done = int(row.get("completed") or 0)
+            lines.append(f"• {label}: {done} завершено")
 
     if stats["total"] == 0:
         lines.append("\nПока нет ни одной сессии. Начните первую тренировку!")
 
     b = InlineKeyboardBuilder()
     b.button(text="🎯 Начать тренировку", callback_data="start_training")
+    if stats["completed"] > 0:
+        b.button(text="📋 История сессий", callback_data="stats:history")
     b.button(text="◀️ Назад", callback_data="back_to_menu")
     b.adjust(1)
 
     await callback.message.edit_text("\n".join(lines), parse_mode="HTML", reply_markup=b.as_markup())
+    await callback.answer()
+
+
+@router.callback_query(F.data == "stats:history")
+async def show_session_history(callback: CallbackQuery):
+    stats = await get_user_stats(callback.from_user.id)
+    sessions = stats.get("recent_sessions", [])
+
+    if not sessions:
+        await callback.answer("История пуста", show_alert=True)
+        return
+
+    b = InlineKeyboardBuilder()
+    for s in sessions:
+        product = _PRODUCT_LABELS.get(s.get("product") or "", "—")
+        stage = _STAGE_LABELS.get(s.get("stage") or "", "—")
+        sc = s.get("score")
+        sc_str = f" | {sc}/10" if sc else ""
+        date_str = (s.get("completed_at") or "")[:10]
+        b.button(
+            text=f"{date_str} {stage} · {product}{sc_str}",
+            callback_data=f"stats:session:{s['id']}",
+        )
+    b.button(text="◀️ Назад к статистике", callback_data="show_stats")
+    b.adjust(1)
+
+    await callback.message.edit_text(
+        "📋 <b>История завершённых сессий</b>\n\nНажмите на сессию для просмотра оценки тренера:",
+        parse_mode="HTML",
+        reply_markup=b.as_markup(),
+    )
+    await callback.answer()
+
+
+@router.callback_query(F.data.startswith("stats:session:"))
+async def show_session_detail(callback: CallbackQuery):
+    session_id = int(callback.data.split(":")[-1])
+    session = await get_user_session_detail(session_id, callback.from_user.id)
+
+    if not session:
+        await callback.answer("Сессия не найдена", show_alert=True)
+        return
+
+    stage = _STAGE_LABELS.get(session.get("stage") or "", "—")
+    product = _PRODUCT_LABELS.get(session.get("product") or "", "—")
+    mode = _MODE_LABELS.get(session.get("mode") or "", "—")
+    sc = session.get("score")
+    date_str = (session.get("completed_at") or "")[:16].replace("T", " ")
+    feedback = session.get("final_feedback") or "Оценка не сохранена."
+
+    header = (
+        f"📋 <b>Сессия #{session_id}</b>\n"
+        f"📅 {date_str}\n"
+        f"🎯 {mode} · {stage} · {product}\n"
+        f"⭐ Балл: <b>{sc}/10</b>\n\n" if sc else
+        f"📋 <b>Сессия #{session_id}</b>\n"
+        f"📅 {date_str}\n"
+        f"🎯 {mode} · {stage} · {product}\n\n"
+    )
+
+    b = InlineKeyboardBuilder()
+    b.button(text="◀️ К истории", callback_data="stats:history")
+    b.adjust(1)
+
+    text = header + feedback
+    if len(text) > 4096:
+        text = text[:4050] + "…"
+
+    await callback.message.edit_text(text, parse_mode="HTML", reply_markup=b.as_markup())
     await callback.answer()

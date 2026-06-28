@@ -39,9 +39,13 @@ async def get_opening_message(
     difficulty: str = "medium",
     mode: str = "full",
     hidden_product: str | None = None,
+    objection_text: str | None = None,
 ) -> str:
-    system = build_client_prompt(profile, stage, product, difficulty, mode, hidden_product)
-    trigger = STAGE_OPENING_TRIGGERS.get(stage, _OPENING_TRIGGER)
+    system = build_client_prompt(profile, stage, product, difficulty, mode, hidden_product, objection_text)
+    if mode == "objection" and objection_text:
+        trigger = f"Открой диалог — произнеси своё возражение: «{objection_text}»"
+    else:
+        trigger = STAGE_OPENING_TRIGGERS.get(stage, _OPENING_TRIGGER)
     response = await _get_client().messages.create(
         model="claude-sonnet-4-6",
         max_tokens=200,
@@ -59,8 +63,9 @@ async def continue_dialog(
     difficulty: str = "medium",
     mode: str = "full",
     hidden_product: str | None = None,
+    objection_text: str | None = None,
 ) -> str:
-    system = build_client_prompt(profile, stage, product, difficulty, mode, hidden_product)
+    system = build_client_prompt(profile, stage, product, difficulty, mode, hidden_product, objection_text)
     claude_msgs = _to_claude_messages(messages)
     response = await _get_client().messages.create(
         model="claude-sonnet-4-6",

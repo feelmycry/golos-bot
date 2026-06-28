@@ -10,7 +10,7 @@ from services.client_gen import generate_client
 from services.claude import get_opening_message
 from services.db import upsert_user, create_session, update_messages
 from services.photos import fetch_photos
-from prompts.templates import build_prior_stages_context, STAGE_NAMES, PRODUCT_INFO
+from prompts.templates import build_prior_stages_context, STAGE_NAMES, PRODUCT_INFO, OBJECTIONS
 
 router = Router()
 
@@ -41,6 +41,15 @@ def _mode_kb():
     b.button(text="🎯 Полная встреча", callback_data="mode:full")
     b.button(text="📍 Конкретный этап", callback_data="mode:stage")
     b.button(text="🔍 Подобрать продукт клиенту", callback_data="mode:identify")
+    b.button(text="💬 Отработать возражение", callback_data="mode:objection")
+    b.adjust(1)
+    return b.as_markup()
+
+
+def _objection_kb():
+    b = InlineKeyboardBuilder()
+    for i, (label, _) in enumerate(OBJECTIONS):
+        b.button(text=label, callback_data=f"objection:{i}")
     b.adjust(1)
     return b.as_markup()
 
@@ -142,6 +151,14 @@ async def choose_mode(callback: CallbackQuery, state: FSMContext):
             reply_markup=_cohort_kb(),
         )
         await state.set_state(Training.choosing_cohort)
+    elif mode == "objection":
+        await state.update_data(target_stage="objections")
+        await callback.message.edit_text(
+            "💬 <b>Отработка возражения</b>\n\nКакой продукт будете предлагать?",
+            parse_mode="HTML",
+            reply_markup=_product_kb(),
+        )
+        await state.set_state(Training.choosing_product)
     else:
         await callback.message.edit_text("Выберите этап для отработки:", reply_markup=_stage_kb())
         await state.set_state(Training.choosing_stage)
@@ -263,6 +280,15 @@ async def choose_difficulty(callback: CallbackQuery, state: FSMContext):
     stage = data["target_stage"]
     product = data.get("product")
 
+    if mode == "objection":
+        await callback.message.edit_text(
+            "💬 Выберите возражение для отработки:",
+            reply_markup=_objection_kb(),
+        )
+        await state.set_state(Training.choosing_objection)
+        await callback.answer()
+        return
+
     if mode == "identify":
         await callback.message.answer(
             "🔍 <b>Режим: Подбор продукта</b>\n\n"
@@ -284,6 +310,46 @@ async def choose_difficulty(callback: CallbackQuery, state: FSMContext):
 
     try:
         opening = await get_opening_message(profile, stage, product, difficulty, mode, hidden_product)
+    except Exception as e:
+        await callback.message.answer(f"❌ Ошибка AI: {e}")
+        return
+
+    messages = [{"role": "client", "content": opening}]
+    await state.update_data(messages=messages)
+    await update_messages(session_id, messages)
+
+    await callback.message.answer(
+        f"🗣 <b>Клиент говорит:</b>\n\n<i>«{opening}»</i>\n\n"
+        f"🎙 Запишите голосовое сообщение с вашим ответом:",
+        parse_mode="HTML",
+        reply_markup=_dialog_kb(),
+    )
+    await state.set_state(Training.in_dialog)
+    await callback.answer()
+
+
+@router.callback_query(Training.choosing_objection, F.data.startswith("objection:"))
+async def choose_objection(callback: CallbackQuery, state: FSMContext):
+    idx = int(callback.data.split(":")[1])
+    _, objection_text = OBJECTIONS[idx]
+    await state.update_data(objection_text=objection_text)
+    data = await state.get_data()
+
+    profile = data["client_profile"]
+    stage = data["target_stage"]
+    product = data.get("product")
+    difficulty = data.get("difficulty", "medium")
+    session_id = data["session_id"]
+
+    await callback.message.answer(
+        f"💬 <b>Возражение клиента:</b>\n<i>«{objection_text}»</i>\n\n"
+        f"Вам предстоит его отработать. Клиент сейчас произнесёт это возражение.\n"
+        f"🎙 Ответьте голосовым сообщением:",
+        parse_mode="HTML",
+    )
+
+    try:
+        opening = await get_opening_message(profile, stage, product, difficulty, "objection", None, objection_text)
     except Exception as e:
         await callback.message.answer(f"❌ Ошибка AI: {e}")
         return

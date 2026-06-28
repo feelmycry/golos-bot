@@ -1,7 +1,3 @@
-"""
-Игра "Инвестор: Восхождение"
-Доступна только администраторам (для проверки).
-"""
 from __future__ import annotations
 
 import html
@@ -16,7 +12,6 @@ from aiogram.fsm.context import FSMContext
 from aiogram.types import CallbackQuery, Message
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 
-from config import ADMIN_IDS
 from services.db import (
     game_get_or_create_player,
     game_get_location_progress,
@@ -2714,9 +2709,6 @@ def _shuffle_quest_options(quest: dict) -> dict:
 
 @router.callback_query(F.data == "game:open")
 async def game_open(callback: CallbackQuery, state: FSMContext):
-    if callback.from_user.id not in ADMIN_IDS:
-        await callback.answer("🚧 Игра находится в разработке. Скоро откроем доступ!", show_alert=True)
-        return
 
     await state.clear()
     player = await game_get_or_create_player(callback.from_user.id)
@@ -2921,9 +2913,6 @@ async def game_info_worldmap(callback: CallbackQuery):
 
 @router.callback_query(F.data == "game:legendary")
 async def game_legendary_menu(callback: CallbackQuery, state: FSMContext):
-    if callback.from_user.id not in ADMIN_IDS:
-        await callback.answer()
-        return
     b = InlineKeyboardBuilder()
     b.button(text="⚡ Войти в Легендарный режим", callback_data="game:legendary_confirm")
     b.button(text="ℹ️ Подробнее о режиме", callback_data="game:info:legendary")
@@ -2944,9 +2933,6 @@ async def game_legendary_menu(callback: CallbackQuery, state: FSMContext):
 
 @router.callback_query(F.data == "game:legendary_confirm")
 async def game_legendary_confirm(callback: CallbackQuery, state: FSMContext):
-    if callback.from_user.id not in ADMIN_IDS:
-        await callback.answer()
-        return
     await state.update_data(legendary=True)
     b = InlineKeyboardBuilder()
     for loc_id, loc in {**LOCATIONS, **WORLD_LOCATIONS}.items():
@@ -2962,9 +2948,6 @@ async def game_legendary_confirm(callback: CallbackQuery, state: FSMContext):
 
 @router.callback_query(F.data.startswith("game:loc:"))
 async def game_loc_legendary(callback: CallbackQuery, state: FSMContext):
-    if callback.from_user.id not in ADMIN_IDS:
-        await callback.answer()
-        return
 
     data = await state.get_data()
     legendary = data.get("legendary", False)
@@ -3020,9 +3003,6 @@ async def game_loc_legendary(callback: CallbackQuery, state: FSMContext):
 
 @router.callback_query(F.data == "game:map")
 async def game_map(callback: CallbackQuery, state: FSMContext):
-    if callback.from_user.id not in ADMIN_IDS:
-        await callback.answer()
-        return
 
     await state.update_data(legendary=False)
 
@@ -3074,9 +3054,6 @@ async def game_map(callback: CallbackQuery, state: FSMContext):
 
 @router.callback_query(F.data == "game:worldmap")
 async def game_worldmap(callback: CallbackQuery, state: FSMContext):
-    if callback.from_user.id not in ADMIN_IDS:
-        await callback.answer()
-        return
     user_id = callback.from_user.id
     player = await game_get_or_create_player(user_id)
     level = parse_level(player["xp"])[0]
@@ -3106,9 +3083,6 @@ async def game_worldmap_locked(callback: CallbackQuery):
 
 @router.callback_query(F.data.startswith("game:location:"))
 async def game_location(callback: CallbackQuery, state: FSMContext):
-    if callback.from_user.id not in ADMIN_IDS:
-        await callback.answer()
-        return
 
     await state.clear()
     loc_id = callback.data[len("game:location:"):]
@@ -3157,9 +3131,6 @@ async def game_location(callback: CallbackQuery, state: FSMContext):
 
 @router.callback_query(F.data.startswith("game:quest:"))
 async def game_quest(callback: CallbackQuery, state: FSMContext):
-    if callback.from_user.id not in ADMIN_IDS:
-        await callback.answer()
-        return
 
     parts = callback.data.split(":")
     loc_id, quest_id = parts[2], parts[3]
@@ -3213,9 +3184,6 @@ async def game_quest(callback: CallbackQuery, state: FSMContext):
 
 @router.callback_query(F.data.startswith("game:answer:"))
 async def game_answer(callback: CallbackQuery, state: FSMContext):
-    if callback.from_user.id not in ADMIN_IDS:
-        await callback.answer()
-        return
 
     parts = callback.data.split(":")
     loc_id, quest_id, answer_idx = parts[2], parts[3], int(parts[4])
@@ -3374,9 +3342,6 @@ SHOP_ITEMS = {
 
 @router.callback_query(F.data == "game:shop")
 async def game_shop(callback: CallbackQuery):
-    if callback.from_user.id not in ADMIN_IDS:
-        await callback.answer()
-        return
 
     player = await game_get_or_create_player(callback.from_user.id)
     hints = player.get("hint_charges", 0)
@@ -3404,9 +3369,6 @@ async def game_shop(callback: CallbackQuery):
 
 @router.callback_query(F.data.startswith("game:shop:buy:"))
 async def game_shop_buy(callback: CallbackQuery):
-    if callback.from_user.id not in ADMIN_IDS:
-        await callback.answer()
-        return
 
     item_key = callback.data[len("game:shop:buy:"):]
     item = SHOP_ITEMS.get(item_key)
@@ -3428,9 +3390,6 @@ async def game_shop_buy(callback: CallbackQuery):
 
 @router.callback_query(F.data == "game:exchange")
 async def game_exchange(callback: CallbackQuery):
-    if callback.from_user.id not in ADMIN_IDS:
-        await callback.answer()
-        return
 
     player = await game_get_or_create_player(callback.from_user.id)
     loc_progress = await game_get_location_progress(callback.from_user.id)
@@ -3481,9 +3440,6 @@ async def game_exchange(callback: CallbackQuery):
 
 @router.callback_query(F.data.startswith("game:exchange:detail:"))
 async def game_exchange_detail(callback: CallbackQuery):
-    if callback.from_user.id not in ADMIN_IDS:
-        await callback.answer()
-        return
 
     loc_id = callback.data[len("game:exchange:detail:"):]
     loc = LOCATIONS.get(loc_id) or WORLD_LOCATIONS.get(loc_id)
@@ -3527,9 +3483,6 @@ async def game_exchange_detail(callback: CallbackQuery):
 
 @router.callback_query(F.data.startswith("game:exchange:buy:"))
 async def game_exchange_buy(callback: CallbackQuery):
-    if callback.from_user.id not in ADMIN_IDS:
-        await callback.answer()
-        return
 
     parts = callback.data.split(":")
     loc_id, qty = parts[3], int(parts[4])
@@ -3558,9 +3511,6 @@ async def game_exchange_buy(callback: CallbackQuery):
 
 @router.callback_query(F.data.startswith("game:exchange:sell:"))
 async def game_exchange_sell(callback: CallbackQuery):
-    if callback.from_user.id not in ADMIN_IDS:
-        await callback.answer()
-        return
 
     parts = callback.data.split(":")
     loc_id, qty = parts[3], int(parts[4])
@@ -3586,9 +3536,6 @@ async def game_exchange_sell(callback: CallbackQuery):
 
 @router.callback_query(F.data == "game:portfolio")
 async def game_portfolio(callback: CallbackQuery):
-    if callback.from_user.id not in ADMIN_IDS:
-        await callback.answer()
-        return
 
     loc_progress = await game_get_location_progress(callback.from_user.id)
     lines = ["💼 <b>МОЙ ПОРТФЕЛЬ</b>\n"]
@@ -3627,9 +3574,6 @@ async def game_portfolio(callback: CallbackQuery):
 
 @router.callback_query(F.data.startswith("game:collect:"))
 async def game_collect(callback: CallbackQuery):
-    if callback.from_user.id not in ADMIN_IDS:
-        await callback.answer()
-        return
 
     loc_id = callback.data[len("game:collect:"):]
     loc = LOCATIONS.get(loc_id) or WORLD_LOCATIONS.get(loc_id)
@@ -3663,9 +3607,6 @@ async def game_collect(callback: CallbackQuery):
 
 @router.callback_query(F.data == "game:profile")
 async def game_profile(callback: CallbackQuery):
-    if callback.from_user.id not in ADMIN_IDS:
-        await callback.answer()
-        return
 
     player = await game_get_or_create_player(callback.from_user.id)
     completed = await game_get_completed_quests(callback.from_user.id)
@@ -3724,9 +3665,6 @@ async def game_profile(callback: CallbackQuery):
 
 @router.callback_query(F.data == "game:daily")
 async def game_daily(callback: CallbackQuery):
-    if callback.from_user.id not in ADMIN_IDS:
-        await callback.answer()
-        return
 
     today_str = date.today().isoformat()
     today_tasks = _get_today_tasks()
@@ -3771,9 +3709,6 @@ async def game_daily(callback: CallbackQuery):
 
 @router.callback_query(F.data.startswith("game:daily:claim:"))
 async def game_daily_claim(callback: CallbackQuery):
-    if callback.from_user.id not in ADMIN_IDS:
-        await callback.answer()
-        return
 
     tid = callback.data[len("game:daily:claim:"):]
     task = DAILY_TASKS.get(tid)
@@ -3796,9 +3731,6 @@ async def game_daily_claim(callback: CallbackQuery):
 
 @router.callback_query(F.data == "game:leaderboard")
 async def game_leaderboard(callback: CallbackQuery):
-    if callback.from_user.id not in ADMIN_IDS:
-        await callback.answer()
-        return
 
     top = await game_get_leaderboard(15)
     my_rank = await game_get_player_rank(callback.from_user.id)
@@ -3829,9 +3761,6 @@ async def game_leaderboard(callback: CallbackQuery):
 
 @router.callback_query(F.data == "game:leaderboard:weekly")
 async def game_leaderboard_weekly(callback: CallbackQuery):
-    if callback.from_user.id not in ADMIN_IDS:
-        await callback.answer()
-        return
 
     week_start = _current_week_start()
     top = await game_get_weekly_leaderboard(week_start, 15)
@@ -3867,9 +3796,6 @@ async def game_leaderboard_weekly(callback: CallbackQuery):
 
 @router.callback_query(F.data == "game:achievements")
 async def game_achievements(callback: CallbackQuery):
-    if callback.from_user.id not in ADMIN_IDS:
-        await callback.answer()
-        return
 
     earned = await game_get_achievements(callback.from_user.id)
     total = len(ACHIEVEMENTS)
@@ -3894,9 +3820,6 @@ async def game_achievements(callback: CallbackQuery):
 
 @router.callback_query(F.data == "game:scenarios")
 async def game_scenarios(callback: CallbackQuery):
-    if callback.from_user.id not in ADMIN_IDS:
-        await callback.answer()
-        return
 
     completed = await game_get_completed_scenarios(callback.from_user.id)
     products: dict[str, list] = {}
@@ -3928,9 +3851,6 @@ async def game_scenarios(callback: CallbackQuery):
 
 @router.callback_query(F.data.startswith("game:scenario:") & ~F.data.startswith("game:scenario:answer:"))
 async def game_scenario_show(callback: CallbackQuery, state: FSMContext):
-    if callback.from_user.id not in ADMIN_IDS:
-        await callback.answer()
-        return
 
     sc_id = callback.data[len("game:scenario:"):]
     sc = next((s for s in SALES_SCENARIOS if s["id"] == sc_id), None)
@@ -3965,9 +3885,6 @@ async def game_scenario_show(callback: CallbackQuery, state: FSMContext):
 
 @router.callback_query(F.data.startswith("game:scenario:answer:"))
 async def game_scenario_answer(callback: CallbackQuery, state: FSMContext):
-    if callback.from_user.id not in ADMIN_IDS:
-        await callback.answer()
-        return
 
     parts = callback.data.split(":")
     sc_id, answer_idx = parts[3], int(parts[4])
@@ -4040,9 +3957,6 @@ async def game_scenario_answer(callback: CallbackQuery, state: FSMContext):
 
 @router.callback_query(F.data == "game:guild")
 async def game_guild_menu(callback: CallbackQuery, state: FSMContext):
-    if callback.from_user.id not in ADMIN_IDS:
-        await callback.answer()
-        return
     user_id = callback.from_user.id
     guild = await game_get_my_guild(user_id)
 
@@ -4080,9 +3994,6 @@ async def game_guild_menu(callback: CallbackQuery, state: FSMContext):
 
 @router.callback_query(F.data == "game:guild_invite")
 async def game_guild_invite(callback: CallbackQuery):
-    if callback.from_user.id not in ADMIN_IDS:
-        await callback.answer()
-        return
     user_id = callback.from_user.id
     guild = await game_get_my_guild(user_id)
 
@@ -4104,9 +4015,6 @@ async def game_guild_invite(callback: CallbackQuery):
 
 @router.callback_query(F.data == "game:guild_create")
 async def game_guild_create_start(callback: CallbackQuery, state: FSMContext):
-    if callback.from_user.id not in ADMIN_IDS:
-        await callback.answer()
-        return
     await state.set_state(GuildState.entering_name)
     b = InlineKeyboardBuilder()
     b.button(text="◀️ Отмена", callback_data="game:guild")
@@ -4119,8 +4027,6 @@ async def game_guild_create_start(callback: CallbackQuery, state: FSMContext):
 
 @router.message(GuildState.entering_name)
 async def game_guild_name_input(message: Message, state: FSMContext):
-    if message.from_user.id not in ADMIN_IDS:
-        return
     name = message.text.strip()[:30]
     if len(name) < 2:
         await message.answer("Слишком короткое название. Попробуй снова:")
@@ -4136,9 +4042,6 @@ async def game_guild_name_input(message: Message, state: FSMContext):
 
 @router.callback_query(GuildState.entering_emoji, F.data.startswith("game:guild_emoji:"))
 async def game_guild_emoji_input(callback: CallbackQuery, state: FSMContext):
-    if callback.from_user.id not in ADMIN_IDS:
-        await callback.answer()
-        return
     emoji = callback.data.split(":")[-1]
     data = await state.get_data()
     name = data.get("guild_name", "Гильдия")
@@ -4162,9 +4065,6 @@ async def game_guild_emoji_input(callback: CallbackQuery, state: FSMContext):
 
 @router.callback_query(F.data == "game:guild_join")
 async def game_guild_join_start(callback: CallbackQuery, state: FSMContext):
-    if callback.from_user.id not in ADMIN_IDS:
-        await callback.answer()
-        return
     await state.set_state(GuildState.entering_code)
     b = InlineKeyboardBuilder()
     b.button(text="◀️ Отмена", callback_data="game:guild")
@@ -4177,8 +4077,6 @@ async def game_guild_join_start(callback: CallbackQuery, state: FSMContext):
 
 @router.message(GuildState.entering_code)
 async def game_guild_code_input(message: Message, state: FSMContext):
-    if message.from_user.id not in ADMIN_IDS:
-        return
     try:
         guild_id = int(message.text.strip().lstrip("#"))
     except ValueError:
@@ -4204,9 +4102,6 @@ async def game_guild_code_input(message: Message, state: FSMContext):
 
 @router.callback_query(F.data == "game:guild_leave")
 async def game_guild_leave(callback: CallbackQuery, state: FSMContext):
-    if callback.from_user.id not in ADMIN_IDS:
-        await callback.answer()
-        return
     await game_leave_guild(callback.from_user.id)
     b = InlineKeyboardBuilder()
     b.button(text="🏰 Гильдии", callback_data="game:guild")
@@ -4217,9 +4112,6 @@ async def game_guild_leave(callback: CallbackQuery, state: FSMContext):
 
 @router.callback_query(F.data == "game:guild_leaderboard")
 async def game_guild_leaderboard(callback: CallbackQuery):
-    if callback.from_user.id not in ADMIN_IDS:
-        await callback.answer()
-        return
     rows = await game_get_guild_leaderboard()
     medals = ["🥇", "🥈", "🥉"]
     lines = ["🏆 <b>РЕЙТИНГ ГИЛЬДИЙ</b>\n"]
@@ -4276,9 +4168,6 @@ def _pick_duel_questions(n: int = 5) -> list[dict]:
 
 @router.callback_query(F.data == "game:duel")
 async def game_duel_menu(callback: CallbackQuery, state: FSMContext):
-    if callback.from_user.id not in ADMIN_IDS:
-        await callback.answer()
-        return
     b = InlineKeyboardBuilder()
     b.button(text="⚔️ Создать дуэль", callback_data="game:duel_create")
     b.button(text="ℹ️ Как работает дуэль?", callback_data="game:info:duel")
@@ -4298,9 +4187,6 @@ async def game_duel_menu(callback: CallbackQuery, state: FSMContext):
 
 @router.callback_query(F.data == "game:duel_create")
 async def game_duel_create(callback: CallbackQuery, state: FSMContext):
-    if callback.from_user.id not in ADMIN_IDS:
-        await callback.answer()
-        return
     questions = _pick_duel_questions(5)
     duel_id = await game_create_duel(callback.from_user.id, json.dumps(questions, ensure_ascii=False))
     await state.update_data(duel_id=duel_id, duel_questions=questions, duel_idx=0, duel_score=0)
@@ -4328,9 +4214,6 @@ async def _send_duel_question(message, state: FSMContext, questions: list, idx: 
 
 @router.callback_query(F.data.startswith("game:duel_ans:"))
 async def game_duel_answer(callback: CallbackQuery, state: FSMContext):
-    if callback.from_user.id not in ADMIN_IDS:
-        await callback.answer()
-        return
     _, _, idx_str, ans_str = callback.data.split(":")
     idx, ans = int(idx_str), int(ans_str)
     data = await state.get_data()
@@ -4418,9 +4301,6 @@ async def game_duel_answer(callback: CallbackQuery, state: FSMContext):
 
 @router.callback_query(F.data == "game:mentor")
 async def game_mentor_menu(callback: CallbackQuery):
-    if callback.from_user.id not in ADMIN_IDS:
-        await callback.answer()
-        return
 
     user_id = callback.from_user.id
     mentor_id = await game_get_mentor(user_id)
@@ -4467,9 +4347,6 @@ def _pick_random_quest() -> tuple[str, str, dict]:
 
 @router.callback_query(F.data == "game:coop")
 async def game_coop_intro(callback: CallbackQuery):
-    if callback.from_user.id not in ADMIN_IDS:
-        await callback.answer("⛔ Доступ закрыт", show_alert=True)
-        return
     b = InlineKeyboardBuilder()
     b.button(text="🤝 Создать совместный квест", callback_data="game:coop_create")
     b.button(text="ℹ️ Как это работает?", callback_data="game:info:coop")
@@ -4488,9 +4365,6 @@ async def game_coop_intro(callback: CallbackQuery):
 
 @router.callback_query(F.data == "game:coop_create")
 async def game_coop_menu(callback: CallbackQuery, state: FSMContext):
-    if callback.from_user.id not in ADMIN_IDS:
-        await callback.answer("⛔ Доступ закрыт", show_alert=True)
-        return
     loc_id, quest_id, quest = _pick_random_quest()
     quest = _shuffle_quest_options(quest)
     session_id = await game_create_coop(
@@ -4517,9 +4391,6 @@ async def game_coop_menu(callback: CallbackQuery, state: FSMContext):
 
 @router.callback_query(F.data.startswith("game:coop_answer:"))
 async def game_coop_show_question(callback: CallbackQuery, state: FSMContext):
-    if callback.from_user.id not in ADMIN_IDS:
-        await callback.answer("⛔ Доступ закрыт", show_alert=True)
-        return
     session_id = int(callback.data.split(":")[-1])
     sess = await game_get_coop(session_id)
     if not sess:
@@ -4540,9 +4411,6 @@ async def game_coop_show_question(callback: CallbackQuery, state: FSMContext):
 
 @router.callback_query(F.data.startswith("game:coop_opt:"))
 async def game_coop_option(callback: CallbackQuery, state: FSMContext):
-    if callback.from_user.id not in ADMIN_IDS:
-        await callback.answer("⛔ Доступ закрыт", show_alert=True)
-        return
     parts = callback.data.split(":")
     session_id, ans = int(parts[2]), int(parts[3])
     sess = await game_get_coop(session_id)
