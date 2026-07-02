@@ -3,6 +3,8 @@ from config import ANTHROPIC_API_KEY
 from prompts.templates import (
     build_client_prompt,
     build_feedback_prompt,
+    build_hint_prompt,
+    build_mid_feedback_prompt,
     build_summary_prompt,
     STAGE_OPENING_TRIGGERS,
 )
@@ -88,6 +90,39 @@ async def get_feedback(
     response = await _get_client().messages.create(
         model="claude-sonnet-4-6",
         max_tokens=500,
+        messages=[{"role": "user", "content": prompt}],
+    )
+    return response.content[0].text.strip()
+
+
+async def get_hint(
+    messages: list,
+    stage: str,
+    product: str | None,
+    mode: str = "full",
+    hidden_product: str | None = None,
+) -> str:
+    prompt = build_hint_prompt(messages, stage, product, mode, hidden_product)
+    response = await _get_client().messages.create(
+        model="claude-sonnet-4-6",
+        max_tokens=500,
+        messages=[{"role": "user", "content": prompt}],
+    )
+    return response.content[0].text.strip()
+
+
+async def get_mid_feedback(
+    messages: list,
+    stage: str,
+    product: str | None,
+    profile: dict,
+    mode: str = "full",
+    hidden_product: str | None = None,
+) -> str:
+    prompt = build_mid_feedback_prompt(messages, stage, product, profile, mode, hidden_product)
+    response = await _get_client().messages.create(
+        model="claude-sonnet-4-6",
+        max_tokens=700,
         messages=[{"role": "user", "content": prompt}],
     )
     return response.content[0].text.strip()

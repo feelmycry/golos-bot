@@ -299,6 +299,117 @@ def build_client_prompt(
 7. Если сотрудник внимателен и профессионален — постепенно открывайся""".replace(",", ",")
 
 
+_STAGE_HINT_GOAL = {
+    "greeting": "установить контакт, расположить к себе, узнать цель визита клиента",
+    "needs": "задать открытые вопросы, выявить финансовые цели и ситуацию клиента",
+    "presentation": "представить продукт через выгоды, связанные с потребностями именно этого клиента",
+    "objections": "снять возражение: признать опасение, аргументировать фактами, уточнить что осталось",
+    "closing": "получить согласие и предложить конкретный следующий шаг (расчёт, оформление)",
+    "full": "двигаться по этапам: выявить потребность → презентовать → снять возражения → закрыть",
+}
+
+
+def build_hint_prompt(
+    messages: list,
+    stage: str,
+    product: str | None,
+    mode: str = "full",
+    hidden_product: str | None = None,
+) -> str:
+    stage_name = STAGE_NAMES.get(stage, stage)
+    goal = _STAGE_HINT_GOAL.get(stage, _STAGE_HINT_GOAL["full"])
+
+    if mode == "identify":
+        product_line = "Режим: ПОДБОР ПРОДУКТА — нужно выявить потребность и предложить подходящий продукт."
+    elif product and product in PRODUCT_INFO:
+        pname, pdesc = PRODUCT_INFO[product]
+        product_line = f"Продукт: {pname}\nКлючевые преимущества: {pdesc}"
+    else:
+        product_line = "Продукт: не выбран"
+
+    history_lines = []
+    for msg in messages[-12:]:
+        role = "Клиент" if msg["role"] == "client" else "Сотрудник"
+        history_lines.append(f"{role}: {msg['content']}")
+    history = "\n".join(history_lines) if history_lines else "(Диалог ещё не начался)"
+
+    return f"""Ты — опытный тренер по продажам инвестиционных продуктов Альфа-Банка.
+
+ПАРАМЕТРЫ ТРЕНИРОВКИ:
+- Этап: {stage_name}
+- Цель этапа: {goal}
+- {product_line}
+
+ПОСЛЕДНИЕ РЕПЛИКИ:
+{history}
+
+ЗАДАЧА: дай сотруднику конкретную подсказку — что именно сказать СЛЕДУЮЩИМ ходом, чтобы продвинуть клиента к оформлению продукта.
+
+Ответь строго в таком формате (используй HTML-теги):
+
+🎯 <b>Твоя цель сейчас:</b> [1 предложение — что достичь следующей репликой]
+
+💬 <b>Что сказать (пример фразы):</b>
+<i>«[конкретная живая фраза, которую можно произнести почти дословно]»</i>
+
+📌 <b>Почему это работает:</b> [1–2 предложения — логика тактики]
+
+Пиши по-русски, конкретно. Фраза — живая, не шаблонная."""
+
+
+def build_mid_feedback_prompt(
+    messages: list,
+    stage: str,
+    product: str | None,
+    profile: dict,
+    mode: str = "full",
+    hidden_product: str | None = None,
+) -> str:
+    stage_name = STAGE_NAMES.get(stage, stage)
+
+    if mode == "identify":
+        product_line = "Режим: ПОДБОР ПРОДУКТА"
+    elif product and product in PRODUCT_INFO:
+        product_line = f"Продукт: {PRODUCT_INFO[product][0]}"
+    else:
+        product_line = "Продукт: не выбран"
+
+    history_lines = []
+    for msg in messages:
+        role = "Клиент" if msg["role"] == "client" else "Сотрудник"
+        history_lines.append(f"{role}: {msg['content']}")
+    history = "\n".join(history_lines)
+
+    employee_count = sum(1 for m in messages if m["role"] == "employee")
+
+    return f"""Ты — опытный тренер по продажам инвестиционных продуктов Альфа-Банка.
+
+Сотрудник запросил промежуточную обратную связь в ходе тренировки.
+
+ПАРАМЕТРЫ СЕССИИ:
+- Этап: {stage_name}
+- {product_line}
+- Реплик сотрудника: {employee_count}
+
+ДИАЛОГ (с начала):
+{history}
+
+Дай развёрнутый анализ строго в таком формате (используй HTML-теги):
+
+✅ <b>Что сделано хорошо:</b>
+• [конкретный момент из диалога — процитируй или чётко опиши]
+• [ещё один сильный момент, если есть]
+
+🔧 <b>Что улучшить:</b>
+• [конкретная проблема] → <b>Как именно:</b> <i>«[пример лучшей формулировки]»</i>
+• [ещё одна проблема, если есть] → <b>Как именно:</b> <i>«[пример]»</i>
+
+🚀 <b>Следующий шаг:</b>
+[1–2 предложения — на чём сосредоточиться дальше в этом диалоге]
+
+Пиши по-русски, конкретно и по-дружески. Не просто критикуй — показывай КАК именно улучшить."""
+
+
 def build_feedback_prompt(
     messages: list,
     last_employee: str,

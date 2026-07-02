@@ -1,5 +1,4 @@
-import math
-from datetime import date, timedelta, datetime
+from datetime import date, timedelta, datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
 
@@ -20,7 +19,6 @@ from services.db import (
     game_add_weekly_xp,
     game_update_player,
     game_collect_income,
-    game_get_daily_progress,
 )
 
 router = APIRouter()
@@ -49,8 +47,8 @@ def _collect_amount(loc: dict, loc_progress: dict, loc_id: str) -> int:
     last = p.get("last_collected")
     if not last:
         return loc["income_per_hour"] * shares
-    dt = datetime.fromisoformat(last)
-    hours = max(0, (datetime.utcnow() - dt).total_seconds() / 3600)
+    dt = datetime.fromisoformat(last).replace(tzinfo=timezone.utc)
+    hours = max(0, (datetime.now(timezone.utc) - dt).total_seconds() / 3600)
     return int(loc["income_per_hour"] * shares * hours)
 
 
@@ -149,7 +147,6 @@ async def answer_quest(
         return {"correct": None, "xp_earned": 0, "coins_earned": 0, "rep_earned": 0,
                 "explanation": quest["explanation"], "new_achievements": [], "already_done": True}
 
-    player = await game_get_or_create_player(user_id)
     is_correct = body.answer_idx == quest["correct"]
     today_str = date.today().isoformat()
     week = _week_start()
@@ -233,4 +230,4 @@ async def collect_income(loc_id: str, request: Request, user_id: int = Depends(g
         return {"collected": 0, "message": "Нечего собирать"}
 
     await game_collect_income(user_id, loc_id, amount)
-    return {"collected": amount}
+    return {"collected": amount, "message": ""}

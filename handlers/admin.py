@@ -1,4 +1,5 @@
 import csv
+import html
 import io
 from datetime import datetime
 
@@ -34,6 +35,22 @@ _COHORT_LABELS = {
 }
 
 
+def _split_html(text: str, limit: int = 4000) -> list[str]:
+    """Split text into chunks at line boundaries, never breaking HTML tags."""
+    chunks, current = [], []
+    current_len = 0
+    for line in text.split("\n"):
+        # +1 for the newline we'll re-join with
+        if current_len + len(line) + 1 > limit and current:
+            chunks.append("\n".join(current))
+            current, current_len = [], 0
+        current.append(line)
+        current_len += len(line) + 1
+    if current:
+        chunks.append("\n".join(current))
+    return chunks
+
+
 def _users_kb(users: list) -> InlineKeyboardBuilder:
     kb = InlineKeyboardBuilder()
     for u in users:
@@ -59,8 +76,8 @@ async def _send_admin_summary(target):
 
     lines.append(f"👥 <b>Пользователи:</b> {st['total_users']}")
     for u in st["users"]:
-        name = u["first_name"] or "—"
-        uname = f"@{u['username']}" if u["username"] else "без username"
+        name = html.escape(u["first_name"] or "—")
+        uname = f"@{html.escape(u['username'])}" if u["username"] else "без username"
         done = int(u["sessions_done"] or 0)
         sc = u.get("avg_score")
         sc_str = f", ср. балл {sc}/10" if sc else ""
@@ -86,7 +103,7 @@ async def _send_admin_summary(target):
             avg_msgs = round(r["avg_msgs"] or 0, 1)
             sc = r.get("avg_score")
             sc_str = f", ср. балл <b>{sc}/10</b>" if sc else ""
-            lines.append(f"  • {r['product']}: {r['cnt']} сессий, завершено {done}, ~{avg_msgs} сообщ{sc_str}")
+            lines.append(f"  • {html.escape(r['product'] or '—')}: {r['cnt']} сессий, завершено {done}, ~{avg_msgs} сообщ{sc_str}")
 
     if st["by_cohort"]:
         lines.append("\n👤 <b>По когортам клиентов:</b>")
@@ -102,8 +119,8 @@ async def _send_admin_summary(target):
             status = "✅" if r["is_complete"] else "🔄"
             started = r["started_at"][:16] if r["started_at"] else "?"
             lines.append(
-                f"  {status} {r['first_name']} | {stage} | "
-                f"{r['product'] or '—'} | {r['msg_count']} сообщ | {started}"
+                f"  {status} {html.escape(r['first_name'] or '—')} | {stage} | "
+                f"{html.escape(r['product'] or '—')} | {r['msg_count']} сообщ | {started}"
             )
 
     lines.append("\n\n<i>Нажми на пользователя для детального разреза:</i>")
@@ -115,7 +132,7 @@ async def _send_admin_summary(target):
             if len(text) <= 4096:
                 await target.answer(text, parse_mode="HTML", reply_markup=kb.as_markup())
             else:
-                chunks = [text[i:i+4000] for i in range(0, len(text), 4000)]
+                chunks = _split_html(text)
                 for chunk in chunks[:-1]:
                     await target.answer(chunk, parse_mode="HTML")
                 await target.answer(chunks[-1], parse_mode="HTML", reply_markup=kb.as_markup())
@@ -123,7 +140,7 @@ async def _send_admin_summary(target):
             if len(text) <= 4096:
                 await target.message.edit_text(text, parse_mode="HTML", reply_markup=kb.as_markup())
             else:
-                chunks = [text[i:i+4000] for i in range(0, len(text), 4000)]
+                chunks = _split_html(text)
                 await target.message.edit_text(chunks[0], parse_mode="HTML")
                 for chunk in chunks[1:-1]:
                     await target.message.answer(chunk, parse_mode="HTML")
@@ -150,8 +167,8 @@ async def admin_user_detail(callback: CallbackQuery):
         return
 
     u = sessions[0]
-    name = u["first_name"] or "—"
-    uname = f" (@{u['username']})" if u["username"] else ""
+    name = html.escape(u["first_name"] or "—")
+    uname = f" (@{html.escape(u['username'])})" if u["username"] else ""
     registered = (u["created_at"] or "")[:10]
 
     total = len(sessions)
@@ -167,7 +184,7 @@ async def admin_user_detail(callback: CallbackQuery):
     for i, s in enumerate(sessions, 1):
         status = "✅" if s["is_complete"] else "🔄"
         stage = _STAGE_LABELS.get(s["stage"] or "", s["stage"] or "—")
-        product = s["product"] or "—"
+        product = html.escape(s["product"] or "—")
         cohort = _COHORT_LABELS.get(s["cohort"] or "", s["cohort"] or "—")
         msgs = s["msg_count"] or 0
         started = (s["started_at"] or "")[:16].replace("T", " ")
@@ -208,7 +225,7 @@ async def admin_user_detail(callback: CallbackQuery):
         await callback.message.edit_text(full_text, parse_mode="HTML", reply_markup=kb.as_markup())
     else:
         # Send first chunk as edit (no keyboard), rest as new messages, last gets keyboard
-        chunks = [full_text[i:i+4000] for i in range(0, len(full_text), 4000)]
+        chunks = _split_html(full_text)
         await callback.message.edit_text(chunks[0], parse_mode="HTML")
         for chunk in chunks[1:-1]:
             await callback.message.answer(chunk, parse_mode="HTML")

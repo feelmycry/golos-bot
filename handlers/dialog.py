@@ -8,7 +8,7 @@ from aiogram.utils.keyboard import InlineKeyboardBuilder
 
 from states.training import Training
 from services.whisper import transcribe_voice
-from services.claude import continue_dialog, get_feedback, get_session_summary
+from services.claude import continue_dialog, get_feedback, get_hint, get_mid_feedback, get_session_summary
 from services.db import update_messages, complete_session, get_user_stats
 
 router = Router()
@@ -20,8 +20,9 @@ _REACTION_EMOJIS = ["🤔", "💭", "🙄", "😊", "😐", "🧐", "💬", "�
 def _dialog_kb():
     b = InlineKeyboardBuilder()
     b.button(text="💡 Подсказка", callback_data="dialog:hint")
+    b.button(text="💬 Обратная связь", callback_data="dialog:feedback")
     b.button(text="🏁 Завершить", callback_data="dialog:end")
-    b.adjust(2)
+    b.adjust(2, 1)
     return b.as_markup()
 
 
@@ -138,25 +139,49 @@ async def handle_hint(callback: CallbackQuery, state: FSMContext):
     mode: str = data.get("mode", "full")
     hidden_product: str | None = data.get("hidden_product")
 
-    last_employee = next(
-        (m["content"] for m in reversed(messages) if m["role"] == "employee"),
-        None,
-    )
-    if not last_employee:
-        await callback.answer("Сначала отправьте хотя бы один голосовой ответ!", show_alert=True)
+    if not messages:
+        await callback.answer("Дождитесь первого ответа клиента!", show_alert=True)
         return
 
     await callback.answer("Анализирую...")
-    hint_msg = await callback.message.answer("💡 Анализирую ваш ответ...")
+    hint_msg = await callback.message.answer("💡 Формирую подсказку...")
 
     try:
-        feedback = await get_feedback(messages, last_employee, stage, product, mode, hidden_product)
+        hint = await get_hint(messages, stage, product, mode, hidden_product)
         await hint_msg.edit_text(
-            f"💡 <b>Подсказка тренера:</b>\n\n{feedback}",
+            f"💡 <b>Подсказка тренера:</b>\n\n{hint}",
             parse_mode="HTML",
         )
     except Exception as e:
         await hint_msg.edit_text(f"❌ Ошибка: {e}")
+
+
+@router.callback_query(Training.in_dialog, F.data == "dialog:feedback")
+async def handle_mid_feedback(callback: CallbackQuery, state: FSMContext):
+    data = await state.get_data()
+    messages: list = data["messages"]
+    stage: str = data["target_stage"]
+    product: str | None = data.get("product")
+    profile: dict = data["client_profile"]
+    mode: str = data.get("mode", "full")
+    hidden_product: str | None = data.get("hidden_product")
+
+    employee_turns = [m for m in messages if m["role"] == "employee"]
+    if not employee_turns:
+        await callback.answer("Сначала отправьте хотя бы один голосовой ответ!", show_alert=True)
+        return
+
+    await callback.answer("Анализирую...")
+    fb_msg = await callback.message.answer("💬 Анализирую диалог...")
+
+    try:
+        feedback = await get_mid_feedback(messages, stage, product, profile, mode, hidden_product)
+        await fb_msg.edit_text(
+            f"💬 <b>Обратная связь по диалогу:</b>\n\n{feedback}",
+            parse_mode="HTML",
+        )
+    except Exception as e:
+        await fb_msg.edit_text(f"❌ Ошибка: {e}")
 
 
 @router.callback_query(Training.in_dialog, F.data == "dialog:end")
@@ -218,5 +243,12 @@ async def handle_end_stale(callback: CallbackQuery, state: FSMContext):
 @router.callback_query(F.data == "dialog:hint")
 async def handle_hint_stale(callback: CallbackQuery, state: FSMContext):
     """Fallback: кнопка «Подсказка» нажата после перезапуска."""
+    await state.clear()
+    await callback.answer("Сессия устарела после перезапуска бота.", show_alert=True)
+
+
+@router.callback_query(F.data == "dialog:feedback")
+async def handle_feedback_stale(callback: CallbackQuery, state: FSMContext):
+    """Fallback: кнопка «Обратная связь» нажата после перезапуска."""
     await state.clear()
     await callback.answer("Сессия устарела после перезапуска бота.", show_alert=True)

@@ -1,0 +1,923 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<title>Гид по боту-тренажёру</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap');
+
+  :root {
+    --red: #EF3124;
+    --red-light: #FFF0EF;
+    --dark: #1A1A2E;
+    --gray: #64748B;
+    --light: #F8FAFC;
+    --border: #E2E8F0;
+    --text: #1E293B;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+    color: var(--text);
+    background: white;
+    font-size: 13.5px;
+    line-height: 1.55;
+  }
+
+  /* ── Cover ── */
+  .cover {
+    background: linear-gradient(135deg, #1A1A2E 0%, #16213E 60%, #0F3460 100%);
+    color: white;
+    height: 100vh;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    text-align: center;
+    padding: 60px 40px;
+    page-break-after: always;
+    position: relative;
+    overflow: hidden;
+  }
+
+  .cover::before {
+    content: '';
+    position: absolute;
+    top: -100px; right: -100px;
+    width: 400px; height: 400px;
+    border-radius: 50%;
+    background: radial-gradient(circle, rgba(239,49,36,0.3) 0%, transparent 70%);
+  }
+
+  .cover::after {
+    content: '';
+    position: absolute;
+    bottom: -80px; left: -80px;
+    width: 300px; height: 300px;
+    border-radius: 50%;
+    background: radial-gradient(circle, rgba(239,49,36,0.2) 0%, transparent 70%);
+  }
+
+  .cover-logo { font-size: 60px; margin-bottom: 20px; position: relative; z-index: 1; }
+
+  .cover-badge {
+    display: inline-block;
+    background: var(--red);
+    color: white;
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    padding: 5px 16px;
+    border-radius: 20px;
+    margin-bottom: 20px;
+    position: relative; z-index: 1;
+  }
+
+  .cover h1 {
+    font-size: 40px;
+    font-weight: 800;
+    line-height: 1.2;
+    margin-bottom: 14px;
+    position: relative; z-index: 1;
+  }
+
+  .cover-subtitle {
+    font-size: 17px;
+    color: rgba(255,255,255,0.7);
+    max-width: 500px;
+    line-height: 1.5;
+    position: relative; z-index: 1;
+  }
+
+  .cover-divider {
+    width: 60px; height: 3px;
+    background: var(--red);
+    margin: 28px auto;
+    border-radius: 2px;
+    position: relative; z-index: 1;
+  }
+
+  .cover-tags {
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+    justify-content: center;
+    position: relative; z-index: 1;
+  }
+
+  .cover-tag {
+    background: rgba(255,255,255,0.1);
+    border: 1px solid rgba(255,255,255,0.2);
+    color: rgba(255,255,255,0.85);
+    padding: 5px 13px;
+    border-radius: 20px;
+    font-size: 12.5px;
+  }
+
+  /* ── Pages ── */
+  .page {
+    max-width: 800px;
+    margin: 0 auto;
+    padding: 44px 48px;
+  }
+
+  .page-break { page-break-before: always; }
+
+  /* ── Section separator (within same page) ── */
+  .section-sep {
+    border: none;
+    border-top: 2px solid var(--border);
+    margin: 32px 0;
+  }
+
+  /* ── Section header ── */
+  .section-header {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 20px;
+    padding-bottom: 14px;
+    border-bottom: 2px solid var(--border);
+    page-break-inside: avoid;
+    page-break-after: avoid;
+  }
+
+  .section-emoji { font-size: 28px; line-height: 1; flex-shrink: 0; }
+
+  .section-header h2 { font-size: 23px; font-weight: 700; color: var(--dark); }
+
+  .section-number {
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--red);
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    margin-bottom: 2px;
+  }
+
+  /* ── Cards ── */
+  .card {
+    background: var(--light);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 16px 20px;
+    margin-bottom: 14px;
+    page-break-inside: avoid;
+  }
+
+  .card-red { background: var(--red-light); border-color: #FECACA; }
+
+  .card h3 {
+    font-size: 14px;
+    font-weight: 700;
+    color: var(--dark);
+    margin-bottom: 7px;
+  }
+
+  .card p { color: #475569; font-size: 13px; line-height: 1.6; }
+
+  /* ── Feature grid ── */
+  .feature-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+    margin-bottom: 20px;
+  }
+
+  .feature-item {
+    background: var(--light);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 14px 16px;
+    page-break-inside: avoid;
+  }
+
+  .feature-item .fi-emoji { font-size: 20px; margin-bottom: 6px; display: block; }
+  .feature-item h4 { font-size: 13px; font-weight: 700; color: var(--dark); margin-bottom: 3px; }
+  .feature-item p { font-size: 12px; color: var(--gray); line-height: 1.45; }
+
+  /* ── Steps ── */
+  .steps { margin: 14px 0 20px; }
+
+  .step {
+    display: flex;
+    gap: 14px;
+    margin-bottom: 13px;
+    align-items: flex-start;
+    page-break-inside: avoid;
+  }
+
+  .step-num {
+    width: 26px; height: 26px;
+    border-radius: 50%;
+    background: var(--red);
+    color: white;
+    font-size: 12px;
+    font-weight: 700;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    margin-top: 1px;
+  }
+
+  .step-body h4 { font-size: 13.5px; font-weight: 700; color: var(--dark); margin-bottom: 2px; }
+  .step-body p { font-size: 12.5px; color: #475569; line-height: 1.5; }
+
+  /* ── Mode cards ── */
+  .mode-card {
+    border-left: 4px solid var(--red);
+    background: white;
+    border: 1px solid var(--border);
+    border-left: 4px solid var(--red);
+    border-radius: 0 10px 10px 0;
+    padding: 13px 18px;
+    margin-bottom: 10px;
+    page-break-inside: avoid;
+  }
+
+  .mode-card h4 { font-size: 13.5px; font-weight: 700; color: var(--dark); margin-bottom: 4px; }
+  .mode-card p { font-size: 12.5px; color: #475569; line-height: 1.5; }
+
+  .mode-card .badge {
+    display: inline-block;
+    font-size: 10.5px;
+    font-weight: 600;
+    padding: 2px 8px;
+    border-radius: 10px;
+    margin-bottom: 5px;
+  }
+
+  .badge-easy { background: #DCFCE7; color: #166534; }
+  .badge-hard { background: #FEE2E2; color: #991B1B; }
+  .badge-new  { background: #EDE9FE; color: #5B21B6; }
+
+  /* ── Table ── */
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 14px 0 20px;
+    font-size: 12.5px;
+    page-break-inside: avoid;
+  }
+
+  th {
+    background: var(--dark);
+    color: white;
+    padding: 9px 13px;
+    text-align: left;
+    font-weight: 600;
+    font-size: 11.5px;
+  }
+
+  th:first-child { border-radius: 8px 0 0 0; }
+  th:last-child  { border-radius: 0 8px 0 0; }
+
+  td {
+    padding: 8px 13px;
+    border-bottom: 1px solid var(--border);
+    color: #334155;
+    vertical-align: top;
+  }
+
+  tr:nth-child(even) td { background: #F8FAFC; }
+  tr:last-child td { border-bottom: none; }
+
+  /* ── Callout ── */
+  .callout {
+    display: flex;
+    gap: 12px;
+    background: #EFF6FF;
+    border: 1px solid #BFDBFE;
+    border-radius: 10px;
+    padding: 14px 18px;
+    margin: 16px 0;
+    page-break-inside: avoid;
+  }
+
+  .callout-icon { font-size: 18px; flex-shrink: 0; margin-top: 1px; }
+  .callout p { font-size: 13px; color: #1E40AF; line-height: 1.55; }
+  .callout strong { color: #1E3A8A; }
+
+  .callout-tip { background: #F0FDF4; border-color: #BBF7D0; }
+  .callout-tip p { color: #14532D; }
+  .callout-tip strong { color: #052E16; }
+
+  /* ── List ── */
+  ul.styled { list-style: none; margin: 10px 0; }
+
+  ul.styled li {
+    padding: 4px 0 4px 22px;
+    position: relative;
+    font-size: 13px;
+    color: #334155;
+    line-height: 1.5;
+  }
+
+  ul.styled li::before {
+    content: '→';
+    position: absolute;
+    left: 0;
+    color: var(--red);
+    font-weight: 700;
+  }
+
+  /* ── Divider ── */
+  .divider { border: none; border-top: 1px solid var(--border); margin: 22px 0; }
+
+  /* ── Stats row ── */
+  .stats-row {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 12px;
+    margin: 16px 0;
+    page-break-inside: avoid;
+  }
+
+  .stat-box {
+    background: var(--dark);
+    color: white;
+    border-radius: 10px;
+    padding: 16px;
+    text-align: center;
+  }
+
+  .stat-box .stat-num { font-size: 26px; font-weight: 800; color: #FF6B6B; line-height: 1; margin-bottom: 5px; }
+  .stat-box .stat-label { font-size: 11.5px; color: rgba(255,255,255,0.6); line-height: 1.3; }
+
+  h3.sub { font-size: 15px; font-weight: 700; margin: 18px 0 12px; }
+
+  @page { margin: 0; size: A4; }
+</style>
+</head>
+<body>
+
+<!-- ════ COVER ════ -->
+<div class="cover">
+  <div class="cover-logo">🤖</div>
+  <div class="cover-badge">Telegram · AI-тренажёр</div>
+  <h1>Бот-тренажёр<br>по продажам</h1>
+  <div class="cover-divider"></div>
+  <p class="cover-subtitle">Полное руководство пользователя. Как отрабатывать навыки продаж, анализировать новости и использовать все возможности бота.</p>
+  <div style="height:28px"></div>
+  <div class="cover-tags">
+    <span class="cover-tag">🎯 Тренировка продаж</span>
+    <span class="cover-tag">📰 Анализ новостей</span>
+    <span class="cover-tag">🌅 Рыночный брифинг</span>
+    <span class="cover-tag">📚 Обучение</span>
+    <span class="cover-tag">🎮 Игра</span>
+  </div>
+</div>
+
+
+<!-- ════ СТРАНИЦА 2: Разделы 1 + 2 ════ -->
+<div class="page page-break">
+
+  <!-- Раздел 1 -->
+  <div class="section-header">
+    <div class="section-emoji">💡</div>
+    <div>
+      <div class="section-number">Раздел 1</div>
+      <h2>Что такое этот бот</h2>
+    </div>
+  </div>
+
+  <p style="font-size:14px; color:#334155; line-height:1.65; margin-bottom:16px;">
+    Это тренажёр для специалистов по продажам инвестиционных продуктов. Бот помогает отработать навыки в безопасной среде — без риска потерять реального клиента.
+  </p>
+
+  <div class="stats-row">
+    <div class="stat-box">
+      <div class="stat-num">6</div>
+      <div class="stat-label">инвестиционных<br>продуктов</div>
+    </div>
+    <div class="stat-box">
+      <div class="stat-num">4</div>
+      <div class="stat-label">режима<br>тренировки</div>
+    </div>
+    <div class="stat-box">
+      <div class="stat-num">🎙</div>
+      <div class="stat-label">голосовой<br>ввод ответов</div>
+    </div>
+  </div>
+
+  <div class="card card-red" style="margin-top:6px;">
+    <h3>🎯 Как это работает</h3>
+    <p>Вы выбираете продукт, этап продажи и тип клиента. Бот генерирует реалистичного AI-клиента с именем, характером, настроением и суммой на счёте. Вы отвечаете голосовым сообщением — бот распознаёт речь, клиент реагирует, а в конце даёт развёрнутую оценку вашей работы с баллом из 10.</p>
+  </div>
+
+  <h3 class="sub">Продукты для тренировки</h3>
+
+  <table>
+    <thead>
+      <tr><th>Продукт</th><th>Полное название</th><th>Для кого</th></tr>
+    </thead>
+    <tbody>
+      <tr><td><strong>НСЖ</strong></td><td>Накопительное страхование жизни</td><td>Семьи, накопление с защитой</td></tr>
+      <tr><td><strong>ПДС</strong></td><td>Программа долгосрочных сбережений</td><td>Пенсионный горизонт</td></tr>
+      <tr><td><strong>ОПИФ</strong></td><td>Открытые паевые инвестиционные фонды</td><td>Готовы к рынку</td></tr>
+      <tr><td><strong>ОМС</strong></td><td>Обезличенные металлические счета</td><td>Защита от инфляции</td></tr>
+      <tr><td><strong>Стратегии</strong></td><td>Автоследование</td><td>Активные инвесторы</td></tr>
+      <tr><td><strong>Портфель</strong></td><td>Диверсифицированный портфель</td><td>Первые инвестиции</td></tr>
+    </tbody>
+  </table>
+
+  <hr class="section-sep">
+
+  <!-- Раздел 2 -->
+  <div class="section-header">
+    <div class="section-emoji">🏠</div>
+    <div>
+      <div class="section-number">Раздел 2</div>
+      <h2>Главное меню</h2>
+    </div>
+  </div>
+
+  <p style="margin-bottom:16px; color:#475569;">После команды <strong>/start</strong> бот показывает главное меню. Вот что делает каждая кнопка:</p>
+
+  <div class="feature-grid">
+    <div class="feature-item">
+      <span class="fi-emoji">🎯</span>
+      <h4>Начать тренировку</h4>
+      <p>Запускает ролевую игру с AI-клиентом. Главная функция бота.</p>
+    </div>
+    <div class="feature-item">
+      <span class="fi-emoji">📰</span>
+      <h4>Анализ новостей</h4>
+      <p>Вставляете новость → бот объясняет, как она влияет на продукты.</p>
+    </div>
+    <div class="feature-item">
+      <span class="fi-emoji">🌅</span>
+      <h4>Рыночный брифинг</h4>
+      <p>Актуальный курс USD, индекс МосБиржи и цена золота прямо сейчас.</p>
+    </div>
+    <div class="feature-item">
+      <span class="fi-emoji">📚</span>
+      <h4>Обучение</h4>
+      <p>Структурированный курс по инвестициям с уроками и квизами.</p>
+    </div>
+    <div class="feature-item">
+      <span class="fi-emoji">🎮</span>
+      <h4>Игра</h4>
+      <p>Квесты, уровни, биржа, гильдии, дуэли — мотивация учиться каждый день.</p>
+    </div>
+    <div class="feature-item">
+      <span class="fi-emoji">📊</span>
+      <h4>Моя статистика</h4>
+      <p>История сессий, средний балл, прогресс по продуктам и этапам.</p>
+    </div>
+  </div>
+
+  <div class="callout">
+    <div class="callout-icon">💬</div>
+    <p>Команда <strong>/cancel</strong> в любой момент сбрасывает текущую сессию и возвращает в главное меню.</p>
+  </div>
+
+</div>
+
+
+<!-- ════ СТРАНИЦА 3: Раздел 3 — Тренировка ════ -->
+<div class="page page-break">
+
+  <div class="section-header">
+    <div class="section-emoji">🎯</div>
+    <div>
+      <div class="section-number">Раздел 3</div>
+      <h2>Тренировка продаж</h2>
+    </div>
+  </div>
+
+  <p style="margin-bottom:14px; color:#475569;">Перед началом диалога вы настраиваете сессию за несколько шагов.</p>
+
+  <div class="steps">
+
+    <div class="step">
+      <div class="step-num">1</div>
+      <div class="step-body">
+        <h4>Тип клиента</h4>
+        <p><strong>Оформление депозита</strong> — клиент пришёл с конкретной целью, нужно предложить инвестиционный продукт.<br>
+        <strong>Другая операция</strong> — клиент пришёл по другому поводу, задача — выявить потребность и предложить продукт.</p>
+      </div>
+    </div>
+
+    <div class="step">
+      <div class="step-num">2</div>
+      <div class="step-body">
+        <h4>Режим тренировки</h4>
+        <p>Выберите, что именно хотите отработать (подробнее — в следующем разделе).</p>
+      </div>
+    </div>
+
+    <div class="step">
+      <div class="step-num">3</div>
+      <div class="step-body">
+        <h4>Продукт</h4>
+        <p>НСЖ, ПДС, ОПИФ, ОМС, Стратегия или Портфель. В режиме «Подбор продукта» шаг пропускается — нужно самому определить подходящий.</p>
+      </div>
+    </div>
+
+    <div class="step">
+      <div class="step-num">4</div>
+      <div class="step-body">
+        <h4>Возрастная группа клиента</h4>
+        <p><strong>Молодой (до 35)</strong> · <strong>Средний возраст (35–50)</strong> · <strong>Взрослый (50–60)</strong> · <strong>Пенсионер (60+)</strong><br>
+        У каждой группы своя ситуация, страхи и цели — бот адаптирует поведение клиента.</p>
+      </div>
+    </div>
+
+    <div class="step">
+      <div class="step-num">5</div>
+      <div class="step-body">
+        <h4>Уровень сложности</h4>
+        <p><strong>Лёгкий</strong> — клиент открыт и позитивен, почти не возражает.<br>
+        <strong>Средний</strong> — реалистичный, задаёт обычные вопросы.<br>
+        <strong>Сложный</strong> — скептик, закрытый, с активными возражениями.</p>
+      </div>
+    </div>
+
+    <div class="step">
+      <div class="step-num">6</div>
+      <div class="step-body">
+        <h4>Карточка клиента</h4>
+        <p>Бот показывает карточку: имя, возраст, сумма на счёте, настроение и цель визита. Иногда — фото для реалистичности. Прочитайте перед тем как начинать.</p>
+      </div>
+    </div>
+
+    <div class="step">
+      <div class="step-num">7</div>
+      <div class="step-body">
+        <h4>Диалог</h4>
+        <p>Клиент первым произносит реплику. Вы отвечаете <strong>голосовым сообщением</strong> — бот распознаёт речь и отвечает от лица клиента.</p>
+      </div>
+    </div>
+
+  </div>
+
+  <div class="callout callout-tip">
+    <div class="callout-icon">🎙</div>
+    <p><strong>Голос — обязательно.</strong> Говорите так же, как говорили бы с реальным клиентом. Текстом тоже можно, но голос даёт более качественный фидбек.</p>
+  </div>
+
+  <hr class="divider">
+
+  <h3 class="sub" style="margin-top:0;">Кнопки в диалоге</h3>
+
+  <div class="feature-grid" style="margin-bottom:0;">
+    <div class="feature-item">
+      <span class="fi-emoji">💡</span>
+      <h4>Подсказка</h4>
+      <p>Бот не выйдет из роли клиента, но подскажет что сделать или сказать дальше, если вы застряли.</p>
+    </div>
+    <div class="feature-item">
+      <span class="fi-emoji">🏁</span>
+      <h4>Завершить</h4>
+      <p>Заканчивает диалог и запрашивает итоговую оценку с баллом и комментарием тренера.</p>
+    </div>
+  </div>
+
+</div>
+
+
+<!-- ════ СТРАНИЦА 4: Раздел 4 — Режимы тренировки ════ -->
+<div class="page page-break">
+
+  <div class="section-header">
+    <div class="section-emoji">⚙️</div>
+    <div>
+      <div class="section-number">Раздел 4</div>
+      <h2>Режимы тренировки</h2>
+    </div>
+  </div>
+
+  <p style="margin-bottom:16px; color:#475569;">Четыре режима позволяют сфокусироваться на разных задачах.</p>
+
+  <div class="mode-card">
+    <div class="badge badge-easy">Для начинающих</div>
+    <h4>🎯 Полная встреча</h4>
+    <p>Симулирует полный цикл продажи — от приветствия до закрытия сделки. Вы проходите все пять этапов подряд: приветствие → выявление потребности → презентация → возражения → закрытие. Лучший режим для регулярной практики.</p>
+  </div>
+
+  <div class="mode-card">
+    <h4>📍 Конкретный этап</h4>
+    <p>Выбираете один из пяти этапов для точечной отработки. Бот воссоздаёт контекст встречи и сразу начинает с нужного момента. Подходит, если хотите прокачать конкретную слабую зону.</p>
+    <p style="font-size:12px; color:#64748B; margin-top:6px;"><strong>Этапы:</strong> 👋 Приветствие · 🔍 Выявление потребности · 📢 Презентация · 💬 Возражения · 🤝 Закрытие</p>
+  </div>
+
+  <div class="mode-card">
+    <div class="badge badge-new">Продвинутый</div>
+    <h4>🔍 Подобрать продукт клиенту</h4>
+    <p>Продукт не задан заранее — вы не знаете, что предлагать. Нужно задавать правильные вопросы, выявить потребности и самостоятельно определить подходящий продукт. В итоговой оценке бот раскрывает «правильный ответ» и сравнивает с вашим выбором.</p>
+  </div>
+
+  <div class="mode-card">
+    <div class="badge badge-hard">Точечная практика</div>
+    <h4>💬 Отработать возражение</h4>
+    <p>Выбираете конкретное возражение из списка. Клиент сразу произносит его — без предварительного диалога. Задача: снять возражение и продвинуть к сделке.</p>
+    <p style="font-size:12px; color:#64748B; margin-top:6px;"><strong>Примеры:</strong> «Я подумаю» · «Деньги нужны сейчас» · «Уже есть депозит» · «Это рискованно» · «Лучше сам разберусь»…</p>
+  </div>
+
+  <hr class="divider">
+
+  <div class="card">
+    <h3>⭐ Разбор от AI-тренера</h3>
+    <p>После нажатия «Завершить» бот анализирует весь диалог: что было сделано правильно, где были ошибки, как можно было сказать иначе. Плюс балл от 1 до 10. Сессия сохраняется в историю — можно перечитать в любой момент.</p>
+  </div>
+
+</div>
+
+
+<!-- ════ СТРАНИЦА 5: Разделы 5 + 6 ════ -->
+<div class="page page-break">
+
+  <!-- Раздел 5 -->
+  <div class="section-header">
+    <div class="section-emoji">📰</div>
+    <div>
+      <div class="section-number">Раздел 5</div>
+      <h2>Анализ новостей</h2>
+    </div>
+  </div>
+
+  <p style="margin-bottom:14px; color:#475569;">Инструмент для быстрой подготовки к разговору с клиентом. Помогает понять, как текущая повестка влияет на конкретные продукты.</p>
+
+  <div class="feature-grid">
+    <div class="feature-item">
+      <span class="fi-emoji">🌍</span>
+      <h4>Общее влияние на рынок</h4>
+      <p>Как новость влияет на инвестиционный климат в целом — что говорить клиентам.</p>
+    </div>
+    <div class="feature-item">
+      <span class="fi-emoji">📊</span>
+      <h4>На ОПИФ</h4>
+      <p>Влияние на 6 фондов: облигационные, сбалансированный, акции, денежный рынок.</p>
+    </div>
+    <div class="feature-item">
+      <span class="fi-emoji">🥇</span>
+      <h4>На ОМС</h4>
+      <p>Влияние на золото, серебро, платину и палладий — с объяснением механизма.</p>
+    </div>
+    <div class="feature-item">
+      <span class="fi-emoji">⚡</span>
+      <h4>На Стратегии</h4>
+      <p>Влияние на Тихую Гавань, Навигатор фондов и Вечный портфель.</p>
+    </div>
+  </div>
+
+  <div class="mode-card">
+    <h4>✍️ Ввести текст вручную</h4>
+    <p>Скопируйте заголовок или текст любой новости и отправьте боту. Бот разберёт её влияние на выбранный продукт или рынок в целом.</p>
+  </div>
+
+  <div class="mode-card">
+    <h4>🔄 Авто-парсинг за последние 48 часов</h4>
+    <p>Бот сам загружает свежие новости с тематических финансовых ресурсов и анализирует их. Удобно для утреннего брифинга — нажал и получил сводку по важным событиям.</p>
+  </div>
+
+  <div class="callout callout-tip" style="margin-bottom:0;">
+    <div class="callout-icon">💡</div>
+    <p><strong>Практический сценарий:</strong> Перед сменой откройте «Анализ новостей» → «Авто-парсинг» → выберите категорию. За 30 секунд вы готовы к вопросу «А что сейчас происходит с рынком?»</p>
+  </div>
+
+  <hr class="section-sep">
+
+  <!-- Раздел 6 -->
+  <div class="section-header">
+    <div class="section-emoji">🌅</div>
+    <div>
+      <div class="section-number">Раздел 6</div>
+      <h2>Рыночный брифинг</h2>
+    </div>
+  </div>
+
+  <p style="margin-bottom:14px; color:#475569;">Быстрый взгляд на ключевые рыночные показатели прямо в Telegram. Данные берутся в реальном времени из официальных источников.</p>
+
+  <div class="feature-grid" style="margin-bottom:14px;">
+    <div class="feature-item">
+      <span class="fi-emoji">📈</span>
+      <h4>Индекс МосБиржи (IMOEX)</h4>
+      <p>Текущее значение и изменение за день. Источник: MOEX ISS.</p>
+    </div>
+    <div class="feature-item">
+      <span class="fi-emoji">💵</span>
+      <h4>Курс USD/RUB</h4>
+      <p>Официальный курс ЦБ РФ на сегодня.</p>
+    </div>
+    <div class="feature-item">
+      <span class="fi-emoji">🥇</span>
+      <h4>Золото в рублях</h4>
+      <p>Официальная учётная цена ЦБ РФ за грамм.</p>
+    </div>
+    <div class="feature-item">
+      <span class="fi-emoji">🕐</span>
+      <h4>Время обновления</h4>
+      <p>Когда именно были получены данные.</p>
+    </div>
+  </div>
+
+  <div class="callout callout-tip" style="margin-bottom:0;">
+    <div class="callout-icon">🔄</div>
+    <p>Кнопка <strong>«Обновить»</strong> подтягивает свежие данные. Используйте перед разговором с клиентом, который спрашивает о ситуации на рынке.</p>
+  </div>
+
+</div>
+
+
+<!-- ════ СТРАНИЦА 6: Разделы 7 + начало 8 ════ -->
+<div class="page page-break">
+
+  <!-- Раздел 7 -->
+  <div class="section-header">
+    <div class="section-emoji">📚</div>
+    <div>
+      <div class="section-number">Раздел 7</div>
+      <h2>Обучение</h2>
+    </div>
+  </div>
+
+  <p style="margin-bottom:14px; color:#475569;">Структурированный курс по инвестициям, фондовому рынку и макроэкономике. Помогает выстроить теоретическую базу, которую вы применяете в тренировках.</p>
+
+  <div class="mode-card">
+    <h4>🚀 Базовый уровень — доступен сейчас</h4>
+    <p>Введение в инвестиции: что такое инвестиционные продукты, чем они отличаются от депозитов, основные понятия.</p>
+  </div>
+
+  <div class="mode-card" style="border-left-color:#94A3B8;">
+    <h4>📊 Средний уровень <span style="font-size:11.5px; color:#94A3B8;">— скоро</span></h4>
+    <p>Анализ рынков, экономические циклы, тактики работы с разными клиентскими профилями.</p>
+  </div>
+
+  <div class="mode-card" style="border-left-color:#94A3B8;">
+    <h4>🏆 Профессиональный уровень <span style="font-size:11.5px; color:#94A3B8;">— скоро</span></h4>
+    <p>Сложные инструменты, работа с возражениями высокого уровня, нестандартные ситуации.</p>
+  </div>
+
+  <div class="feature-grid" style="margin-top:14px;">
+    <div class="feature-item">
+      <span class="fi-emoji">📖</span>
+      <h4>Текст урока</h4>
+      <p>Структурированный материал. Длинные уроки разбиты на страницы — листайте кнопками навигации.</p>
+    </div>
+    <div class="feature-item">
+      <span class="fi-emoji">✅</span>
+      <h4>Квиз + прогресс</h4>
+      <p>Тест на понимание после урока. ⬜ не читал · 📖 прочитал · ✅ сдал квиз.</p>
+    </div>
+  </div>
+
+  <hr class="section-sep">
+
+  <!-- Раздел 8 -->
+  <div class="section-header">
+    <div class="section-emoji">🎮</div>
+    <div>
+      <div class="section-number">Раздел 8</div>
+      <h2>Игра</h2>
+    </div>
+  </div>
+
+  <p style="margin-bottom:14px; color:#475569;">Геймифицированная среда, которая мотивирует возвращаться каждый день.</p>
+
+  <div class="feature-grid">
+    <div class="feature-item">
+      <span class="fi-emoji">⭐</span>
+      <h4>XP и уровни</h4>
+      <p>За каждый квест — очки опыта. Уровень 2 открывает биржу, уровень 3 — магазин бустов.</p>
+    </div>
+    <div class="feature-item">
+      <span class="fi-emoji">💰</span>
+      <h4>Инвест-рубли (ИР)</h4>
+      <p>Игровая валюта. Зарабатываете за квесты и задания, тратите на акции и бусты.</p>
+    </div>
+    <div class="feature-item">
+      <span class="fi-emoji">🔥</span>
+      <h4>Стрик дней</h4>
+      <p>За каждые 7 дней подряд +10% к XP, максимум +50%. Приходит напоминание, если не зашли.</p>
+    </div>
+    <div class="feature-item">
+      <span class="fi-emoji">📋</span>
+      <h4>Ежедневные задания</h4>
+      <p>Три задания в день: квесты, правильные ответы, биржа. Выполнение = монеты + XP.</p>
+    </div>
+  </div>
+
+  <div class="card">
+    <h3>🏙 Квесты по локациям</h3>
+    <p>Вопросы по знанию продуктов, рынка и принципов инвестирования, сгруппированные по компаниям. За правильные ответы — XP и монеты.<br>
+    <span style="font-size:12px; color:#64748B;"><strong>Локации:</strong> Сбербанк · ЛУКОЙЛ · Газпром · Яндекс · Магнит · НОВАТЭК · Apple · Tesla · Amazon</span></p>
+  </div>
+
+  <div class="card card-red">
+    <h3>📈 Биржа ценных бумаг</h3>
+    <p>Открывается на уровне 2. Покупайте акции за ИР и продавайте, когда цена вырастет. Цены меняются каждый день под влиянием рыночных событий — ежедневно происходит 2 случайных события, которые двигают котировки вверх или вниз.</p>
+  </div>
+
+</div>
+
+
+<!-- ════ СТРАНИЦА 7: Раздел 8 продолжение + Раздел 9 ════ -->
+<div class="page page-break">
+
+  <h3 class="sub" style="font-size:16px; color:var(--dark); margin-top:0;">Социальные механики</h3>
+
+  <table>
+    <thead>
+      <tr><th>Механика</th><th>Как работает</th></tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><strong>🏅 Лидерборд</strong></td>
+        <td>Еженедельный и общий рейтинг по XP. Смотрите своё место среди всех участников.</td>
+      </tr>
+      <tr>
+        <td><strong>🛡 Гильдии</strong></td>
+        <td>Создайте команду с коллегами или вступите в существующую. Гильдии соревнуются в общем рейтинге.</td>
+      </tr>
+      <tr>
+        <td><strong>⚔️ Дуэли</strong></td>
+        <td>Вызовите коллегу на дуэль по ссылке. Оба отвечают на одинаковые квесты — кто точнее и быстрее, тот побеждает.</td>
+      </tr>
+      <tr>
+        <td><strong>🤝 Кооп-квест</strong></td>
+        <td>Пройдите совместный квест с коллегой — оба получают награду.</td>
+      </tr>
+      <tr>
+        <td><strong>👨‍🏫 Наставничество</strong></td>
+        <td>Пригласите новичка как своего ученика. Когда ученик отвечает верно — вы получаете бонус XP.</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <div class="card" style="margin-bottom:0;">
+    <h3>🏆 Достижения (14 штук)</h3>
+    <p>Разблокируются за определённые действия и приносят монеты + XP:</p>
+    <ul class="styled" style="margin-top:8px; margin-bottom:0;">
+      <li><strong>Первый шаг 🌱</strong> — пройти первый квест · <strong>Неделя 📅</strong> — 7 дней серии</li>
+      <li><strong>Месяц 🌙</strong> — 30 дней серии · <strong>Инвестор 💹</strong> — купить первую акцию</li>
+      <li><strong>Диверсификация 🎯</strong> — владеть акциями 3 компаний</li>
+      <li><strong>Мастер продаж 🏆</strong> — пройти все сценарии · <strong>Легенда рынка 🦅</strong> — 90 квестов</li>
+    </ul>
+  </div>
+
+  <hr class="section-sep">
+
+  <!-- Раздел 9 -->
+  <div class="section-header">
+    <div class="section-emoji">📊</div>
+    <div>
+      <div class="section-number">Раздел 9</div>
+      <h2>Статистика и советы</h2>
+    </div>
+  </div>
+
+  <div class="feature-grid">
+    <div class="feature-item">
+      <span class="fi-emoji">✅</span>
+      <h4>Завершённые сессии</h4>
+      <p>Сколько тренировок завершено из всех начатых.</p>
+    </div>
+    <div class="feature-item">
+      <span class="fi-emoji">⭐</span>
+      <h4>Средний балл</h4>
+      <p>Общий балл по всем сессиям от 1 до 10.</p>
+    </div>
+    <div class="feature-item">
+      <span class="fi-emoji">📦</span>
+      <h4>По продуктам</h4>
+      <p>Количество сессий и средний балл отдельно по каждому продукту.</p>
+    </div>
+    <div class="feature-item">
+      <span class="fi-emoji">🔢</span>
+      <h4>По этапам</h4>
+      <p>Сколько раз отрабатывался каждый из пяти этапов продажи.</p>
+    </div>
+  </div>
+
+  <div class="card" style="margin-bottom:16px;">
+    <h3>📋 История сессий</h3>
+    <p>Кликните на любую завершённую сессию → увидите дату, режим, продукт, балл и полный разбор от тренера. Удобно перечитывать и отслеживать, что улучшилось.</p>
+  </div>
+
+  <h3 class="sub">Советы для максимальной пользы</h3>
+
+  <ul class="styled">
+    <li>Начинайте с <strong>лёгкой сложности</strong> — так быстрее поймёте структуру диалога</li>
+    <li>Используйте <strong>«Конкретный этап»</strong> для точечной прокачки слабых зон — видно из статистики</li>
+    <li><strong>«Подбор продукта»</strong> — лучший тест понимания потребностей разных клиентских групп</li>
+    <li>Читайте разбор тренера внимательно — там фразы, которые можно использовать уже завтра</li>
+    <li>Хотя бы <strong>одна тренировка в день</strong> — стрик даёт бонус XP и формирует привычку</li>
+    <li>Перед сменой открывайте <strong>Рыночный брифинг</strong> и <strong>Анализ новостей</strong> — 1 минута подготовки</li>
+    <li>Организуйте <strong>дуэль с коллегой</strong> — соревнование мотивирует готовиться серьёзнее</li>
+  </ul>
+
+  <div class="callout" style="margin-top:20px; margin-bottom:0;">
+    <div class="callout-icon">🚀</div>
+    <p>Чем чаще вы тренируетесь, тем точнее бот адаптируется к вашему уровню. Уже через неделю регулярных тренировок средний балл заметно растёт.</p>
+  </div>
+
+</div>
+
+</body>
+</html>
