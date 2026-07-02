@@ -37,6 +37,10 @@ async def get_current_user(request: Request) -> int:
         raise HTTPException(status_code=401, detail="Invalid init data")
 
 
+from api.routers import profile as profile_router
+app.include_router(profile_router.router)
+
+
 @app.get("/api/health")
 async def health():
     return {"status": "ok"}
