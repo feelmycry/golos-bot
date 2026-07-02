@@ -43,6 +43,9 @@ app.include_router(profile_router.router)
 from api.routers import map as map_router
 app.include_router(map_router.router)
 
+from api.routers import exchange as exchange_router
+app.include_router(exchange_router.router)
+
 
 @app.get("/api/health")
 async def health():
