@@ -40,6 +40,9 @@ async def get_current_user(request: Request) -> int:
 from api.routers import profile as profile_router
 app.include_router(profile_router.router)
 
+from api.routers import map as map_router
+app.include_router(map_router.router)
+
 
 @app.get("/api/health")
 async def health():
