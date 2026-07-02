@@ -46,6 +46,10 @@ app.include_router(map_router.router)
 from api.routers import exchange as exchange_router
 app.include_router(exchange_router.router)
 
+from api.routers import leaderboard as lb_router, daily as daily_router
+app.include_router(lb_router.router)
+app.include_router(daily_router.router)
+
 
 @app.get("/api/health")
 async def health():
