@@ -1,5 +1,5 @@
 from aiogram import Router, F
-from aiogram.types import Message, CallbackQuery
+from aiogram.types import Message, CallbackQuery, WebAppInfo
 from aiogram.filters import CommandStart, Command, CommandObject
 from aiogram.fsm.context import FSMContext
 from aiogram.utils.keyboard import InlineKeyboardBuilder
@@ -33,6 +33,7 @@ def _main_kb():
     b.button(text="📈 Анализ акций (в разработке)", callback_data="stock:start")
     b.button(text="📚 Обучение", callback_data="learning:menu")
     b.button(text="🎮 Игра", callback_data="game:open")
+    b.button(text="🎮 Играть", web_app=WebAppInfo(url="https://REPLACE_WITH_MINIAPP_URL"))
     b.adjust(1)
     return b.as_markup()
 
