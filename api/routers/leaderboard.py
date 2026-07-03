@@ -1,7 +1,7 @@
-from datetime import date, timedelta
+﻿from datetime import date, timedelta
 from fastapi import APIRouter, Depends, Request
 
-from api.server import get_current_user
+from api.deps import get_current_user
 from services.db import (
     game_get_leaderboard,
     game_get_weekly_leaderboard,

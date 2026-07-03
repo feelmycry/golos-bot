@@ -1,8 +1,8 @@
-from datetime import date, timedelta, datetime, timezone
+﻿from datetime import date, timedelta, datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
 
-from api.server import get_current_user
+from api.deps import get_current_user
 from api.game_data import (
     LOCATIONS, WORLD_LOCATIONS, FUTURE_LOCATIONS, DAILY_TASKS,
     ACHIEVEMENTS, parse_level, streak_multiplier,
@@ -31,7 +31,7 @@ def _week_start() -> str:
 
 def _rep_rank(loc: dict, reputation: int) -> str:
     thresholds = loc.get("rep_thresholds", [0])
-    ranks = loc.get("rep_rank", ["Новичок"])
+    ranks = loc.get("rep_rank", ["РќРѕРІРёС‡РѕРє"])
     rank = ranks[0]
     for i, t in enumerate(thresholds):
         if reputation >= t and i < len(ranks):
@@ -226,7 +226,7 @@ async def collect_income(loc_id: str, request: Request, user_id: int = Depends(g
     loc_progress = await game_get_location_progress(user_id)
     amount = _collect_amount(all_locs[loc_id], loc_progress, loc_id)
     if amount <= 0:
-        return {"collected": 0, "message": "Нечего собирать"}
+        return {"collected": 0, "message": "РќРµС‡РµРіРѕ СЃРѕР±РёСЂР°С‚СЊ"}
 
     await game_collect_income(user_id, loc_id, amount)
     return {"collected": amount, "message": ""}

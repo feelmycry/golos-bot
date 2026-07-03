@@ -1,8 +1,8 @@
-from datetime import date
+﻿from datetime import date
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
 
-from api.server import get_current_user
+from api.deps import get_current_user
 from api.game_data import STOCK_CONFIG, get_stock_info, DAILY_TASKS
 from services.db import (
     game_get_location_progress,
@@ -63,7 +63,7 @@ async def buy_stock(loc_id: str, body: TradeRequest, request: Request, user_id: 
         "success": success,
         "new_coins": player["coins"],
         "shares": loc_progress.get(loc_id, {}).get("shares", 0),
-        "message": "" if success else "Недостаточно ИР",
+        "message": "" if success else "РќРµРґРѕСЃС‚Р°С‚РѕС‡РЅРѕ РР ",
     }
 
 
@@ -85,5 +85,5 @@ async def sell_stock(loc_id: str, body: TradeRequest, request: Request, user_id:
         "success": success,
         "new_coins": player["coins"],
         "shares": loc_progress.get(loc_id, {}).get("shares", 0),
-        "message": "" if success else "Недостаточно акций",
+        "message": "" if success else "РќРµРґРѕСЃС‚Р°С‚РѕС‡РЅРѕ Р°РєС†РёР№",
     }

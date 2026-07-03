@@ -1,7 +1,7 @@
-from datetime import date, timedelta
+﻿from datetime import date, timedelta
 from fastapi import APIRouter, Depends, Request
 
-from api.server import get_current_user
+from api.deps import get_current_user
 from api.game_data import ACHIEVEMENTS, parse_level, streak_multiplier, get_status
 from services.db import (
     game_get_or_create_player,

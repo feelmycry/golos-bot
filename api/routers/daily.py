@@ -1,8 +1,8 @@
-import hashlib
+﻿import hashlib
 from datetime import date
 from fastapi import APIRouter, Depends, HTTPException, Request
 
-from api.server import get_current_user
+from api.deps import get_current_user
 from api.game_data import DAILY_TASKS
 from services.db import game_get_daily_progress, game_claim_daily_reward
 
@@ -61,4 +61,4 @@ async def claim_daily(task_id: str, request: Request, user_id: int = Depends(get
         raise HTTPException(404, "Task not found")
     today = date.today().isoformat()
     success = await game_claim_daily_reward(user_id, today, task_id, cfg["xp"], cfg["coins"])
-    return {"success": success, "message": "" if success else "Задание не выполнено или уже получено"}
+    return {"success": success, "message": "" if success else "Р—Р°РґР°РЅРёРµ РЅРµ РІС‹РїРѕР»РЅРµРЅРѕ РёР»Рё СѓР¶Рµ РїРѕР»СѓС‡РµРЅРѕ"}
