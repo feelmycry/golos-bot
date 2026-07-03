@@ -3,3 +3,8 @@
 __pycache__/
 *.pyc
 start_bot.vbs
+bot_err.txt
+bot_log.txt
+find_procs.vbs
+guide.html
+guide_bot.pdf

@@ -169,8 +169,7 @@ async def answer_quest(
             if task["type"] == "correct_answers":
                 await game_update_daily_task(user_id, today_str, tid, 1, task["target"])
     else:
-        rep_earned = quest["rep"] // 3
-        await game_save_quest_result(user_id, quest_id, loc_id, 0, 0, rep_earned)
+        rep_earned = 0  # wrong answers don't earn rep in Mini App (no permanent side effects)
 
     # Check achievements
     updated_player = await game_get_or_create_player(user_id)

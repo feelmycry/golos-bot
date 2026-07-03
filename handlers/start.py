@@ -4,6 +4,7 @@ from aiogram.filters import CommandStart, Command, CommandObject
 from aiogram.fsm.context import FSMContext
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 
+from config import MINIAPP_URL
 from services.db import upsert_user, get_user_stats, get_user_session_detail, game_link_mentor
 
 router = Router()
@@ -33,7 +34,8 @@ def _main_kb():
     b.button(text="📈 Анализ акций (в разработке)", callback_data="stock:start")
     b.button(text="📚 Обучение", callback_data="learning:menu")
     b.button(text="🎮 Игра", callback_data="game:open")
-    b.button(text="🎮 Играть", web_app=WebAppInfo(url="https://REPLACE_WITH_MINIAPP_URL"))
+    if MINIAPP_URL:
+        b.button(text="🎮 Играть", web_app=WebAppInfo(url=MINIAPP_URL))
     b.adjust(1)
     return b.as_markup()
 

@@ -1,6 +1,7 @@
 import hashlib
 import hmac
 import json
+import time
 from urllib.parse import parse_qsl
 
 
@@ -17,5 +18,9 @@ def validate_init_data(init_data: str, bot_token: str) -> dict:
 
     if not hmac.compare_digest(hash_computed, hash_received):
         raise ValueError("Invalid hash")
+
+    auth_date = int(params.get("auth_date", 0))
+    if time.time() - auth_date > 86400:
+        raise ValueError("initData expired")
 
     return json.loads(params.get("user", "{}"))
