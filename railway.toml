@@ -2,6 +2,6 @@
 builder = "nixpacks"
 
 [deploy]
-startCommand = "bash start.sh"
+startCommand = "python bot.py"
 healthcheckPath = "/api/health"
 healthcheckTimeout = 30

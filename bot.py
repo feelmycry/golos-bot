@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import os
 
 from aiogram import Bot, Dispatcher
 from aiogram.fsm.storage.memory import MemoryStorage
@@ -49,6 +50,15 @@ async def main():
     dp.include_router(game.router)
 
     asyncio.create_task(streak_reminder_task(bot))
+
+    port = int(os.getenv("PORT", 0))
+    if port:
+        import uvicorn
+        from api.server import app as api_app
+        config = uvicorn.Config(api_app, host="0.0.0.0", port=port, log_level="warning")
+        server = uvicorn.Server(config)
+        asyncio.create_task(server.serve())
+        logging.info("API server started on port %d", port)
 
     logging.info("Bot started")
     await dp.start_polling(bot, allowed_updates=["message", "callback_query"])
