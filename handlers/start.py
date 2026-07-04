@@ -131,7 +131,7 @@ async def cmd_start(message: Message, state: FSMContext, command: CommandObject 
         # fall through to normal start menu
 
     name = message.from_user.first_name or "Коллега"
-    token = await create_token(message.from_user.id)
+    token = create_token(message.from_user.id)
     await message.answer(
         f"Привет, {name}! 👋\n\n"
         f"Это тренажёр по продажам инвестиционных продуктов и помощник по анализу новостей.\n\n"
@@ -155,7 +155,7 @@ async def cmd_myid(message: Message):
 @router.message(Command("cancel"))
 async def cmd_cancel(message: Message, state: FSMContext):
     await state.clear()
-    token = await create_token(message.from_user.id)
+    token = create_token(message.from_user.id)
     await message.answer("Сессия сброшена. Выберите действие:", reply_markup=_main_kb(message.from_user.id, token or ""))
 
 
@@ -163,7 +163,7 @@ async def cmd_cancel(message: Message, state: FSMContext):
 async def back_to_menu(callback: CallbackQuery, state: FSMContext):
     await state.clear()
     name = callback.from_user.first_name or "Коллега"
-    token = await create_token(callback.from_user.id)
+    token = create_token(callback.from_user.id)
     await callback.message.edit_text(
         f"Привет, {name}! Выберите действие:",
         reply_markup=_main_kb(callback.from_user.id, token or ""),
@@ -175,7 +175,7 @@ async def back_to_menu(callback: CallbackQuery, state: FSMContext):
 async def check_subscription(callback: CallbackQuery, state: FSMContext):
     await state.clear()
     name = callback.from_user.first_name or "Коллега"
-    token = await create_token(callback.from_user.id)
+    token = create_token(callback.from_user.id)
     await callback.message.edit_text(
         f"✅ Подписка подтверждена! Добро пожаловать, {name}!\n\n"
         f"Это тренажёр по продажам инвестиционных продуктов и помощник по анализу новостей.\n\n"
