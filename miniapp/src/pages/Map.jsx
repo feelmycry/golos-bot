@@ -22,6 +22,9 @@ export default function Map() {
     try {
       await apiFetch(`/api/map/${locId}/collect`, { method: "POST" });
       refetch();
+      const freshMap = await apiFetch("/api/map");
+      const freshLoc = freshMap?.find((l) => l.id === locId);
+      if (freshLoc) setSelectedLoc(freshLoc);
     } finally {
       setCollecting(false);
     }

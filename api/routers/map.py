@@ -226,7 +226,13 @@ async def collect_income(loc_id: str, request: Request, user_id: int = Depends(g
     loc_progress = await game_get_location_progress(user_id)
     amount = _collect_amount(all_locs[loc_id], loc_progress, loc_id)
     if amount <= 0:
-        return {"collected": 0, "message": "РќРµС‡РµРіРѕ СЃРѕР±РёСЂР°С‚СЊ"}
+        return {"collected": 0, "message": "Нечего собирать"}
 
     await game_collect_income(user_id, loc_id, amount)
+
+    today_str = date.today().isoformat()
+    for tid, task in DAILY_TASKS.items():
+        if task["type"] == "collect_income":
+            await game_update_daily_task(user_id, today_str, tid, amount, task["target"])
+
     return {"collected": amount, "message": ""}
