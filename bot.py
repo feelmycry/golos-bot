@@ -51,7 +51,7 @@ async def main():
 
     asyncio.create_task(streak_reminder_task(bot))
 
-    port = int(os.getenv("PORT", 0))
+    port = int(os.getenv("PORT", 8000 if os.getenv("RAILWAY_ENVIRONMENT") else 0))
     if port:
         import uvicorn
         from api.server import app as api_app
