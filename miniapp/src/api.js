@@ -10,8 +10,13 @@ function getUserIdFallback() {
   try { return String(window.Telegram?.WebApp?.initDataUnsafe?.user?.id || ""); } catch { return ""; }
 }
 
+const _token = (() => {
+  try { return new URLSearchParams(window.location.search).get('t') || ""; } catch { return ""; }
+})();
+
 export async function apiFetch(path, opts = {}) {
-  const res = await fetch(`${BASE}${path}`, {
+  const url = _token ? `${BASE}${path}${path.includes('?') ? '&' : '?'}t=${_token}` : `${BASE}${path}`;
+  const res = await fetch(url, {
     ...opts,
     headers: {
       "Content-Type": "application/json",
@@ -35,7 +40,11 @@ export function useApi(path, deps = []) {
       .catch((error) => setState({ data: null, loading: false, error }));
   }, [path]);
 
-  React.useEffect(() => { refetch(); }, [refetch, ...deps]);
+  React.useEffect(() => {
+    // Small delay to allow Telegram Desktop to inject window.Telegram.WebApp
+    const t = setTimeout(refetch, 300);
+    return () => clearTimeout(t);
+  }, [refetch, ...deps]);
 
   return { ...state, refetch };
 }

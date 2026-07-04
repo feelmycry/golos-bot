@@ -12,6 +12,15 @@ async def get_current_user(request: Request) -> int:
     if DEV_USER_ID:
         return DEV_USER_ID
 
+    # Redis token from ?t= query param (Telegram Desktop fallback)
+    token = request.query_params.get("t", "")
+    if token:
+        from services.miniapp_auth import validate_token
+        uid = await validate_token(token)
+        if uid:
+            log.info("Auth via Redis token for user %d", uid)
+            return uid
+
     init_data = request.headers.get("X-Telegram-Init-Data", "")
     if init_data:
         try:
