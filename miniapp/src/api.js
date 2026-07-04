@@ -37,14 +37,16 @@ export function useApi(path, deps = []) {
     setState((s) => ({ ...s, loading: true }));
     apiFetch(path)
       .then((data) => setState({ data, loading: false, error: null }))
-      .catch((error) => setState({ data: null, loading: false, error }));
+      .catch((error) => setState({ data: null, loading: false, error: error.message || String(error) }));
   }, [path]);
 
   React.useEffect(() => {
-    // Small delay to allow Telegram Desktop to inject window.Telegram.WebApp
     const t = setTimeout(refetch, 300);
     return () => clearTimeout(t);
   }, [refetch, ...deps]);
 
   return { ...state, refetch };
 }
+
+export const DEBUG_TOKEN = _token;
+export const DEBUG_BASE = BASE;

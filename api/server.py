@@ -28,6 +28,22 @@ async def health():
     return {"status": "ok"}
 
 
+@app.get("/api/debug")
+async def debug(request: Request):
+    token = request.query_params.get("t", "")
+    uid = None
+    if token:
+        from services.miniapp_auth import validate_token
+        uid = validate_token(token)
+    return {
+        "token_present": bool(token),
+        "token_valid": uid is not None,
+        "resolved_user": uid,
+        "init_data_present": bool(request.headers.get("X-Telegram-Init-Data")),
+        "user_id_header": request.headers.get("X-Telegram-User-Id", ""),
+    }
+
+
 if __name__ == "__main__":
     import os
     port = int(os.getenv("PORT", 8000))

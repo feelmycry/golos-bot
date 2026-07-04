@@ -1,13 +1,20 @@
-import { useApi } from "../api";
+import { useApi, DEBUG_TOKEN, DEBUG_BASE } from "../api";
 import XPBar from "../components/XPBar";
 import DailyTask from "../components/DailyTask";
 
 export default function Dashboard() {
-  const { data: me, loading: meLoading, refetch: refetchMe } = useApi("/api/me");
+  const { data: me, loading: meLoading, error: meError, refetch: refetchMe } = useApi("/api/me");
   const { data: daily, loading: dailyLoading, refetch: refetchDaily } = useApi("/api/daily");
 
   if (meLoading || dailyLoading) return <div className="page" style={{ textAlign: "center", paddingTop: 40 }}>⏳</div>;
-  if (!me) return <div className="page" style={{ textAlign: "center", paddingTop: 40, color: "var(--hint)" }}>⚠️ Не удалось загрузить профиль. Попробуйте перезапустить.</div>;
+  if (!me) return (
+    <div className="page" style={{ padding: 16, fontSize: 12, color: "var(--hint)", wordBreak: "break-all" }}>
+      <div style={{ color: "red", marginBottom: 8 }}>⚠️ Ошибка загрузки ({meError})</div>
+      <div><b>API:</b> {DEBUG_BASE}</div>
+      <div><b>Token:</b> {DEBUG_TOKEN ? DEBUG_TOKEN.slice(0, 20) + "…" : "НЕТ"}</div>
+      <div><b>URL:</b> {window.location.search || "(пусто)"}</div>
+    </div>
+  );
 
   const streak = me?.streak_days || 0;
 
