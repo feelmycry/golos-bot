@@ -3,11 +3,11 @@ import React from 'react';
 const BASE = import.meta.env.VITE_API_URL || "http://localhost:8000";
 
 function getInitData() {
-  try {
-    return window.Telegram?.WebApp?.initData || "";
-  } catch {
-    return "";
-  }
+  try { return window.Telegram?.WebApp?.initData || ""; } catch { return ""; }
+}
+
+function getUserIdFallback() {
+  try { return String(window.Telegram?.WebApp?.initDataUnsafe?.user?.id || ""); } catch { return ""; }
 }
 
 export async function apiFetch(path, opts = {}) {
@@ -16,6 +16,7 @@ export async function apiFetch(path, opts = {}) {
     headers: {
       "Content-Type": "application/json",
       "X-Telegram-Init-Data": getInitData(),
+      "X-Telegram-User-Id": getUserIdFallback(),
       "ngrok-skip-browser-warning": "true",
       ...(opts.headers || {}),
     },

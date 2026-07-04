@@ -23,8 +23,8 @@ function NoTelegram() {
 
 export default function App() {
   const [tab, setTab] = useState("dashboard");
-  const hasInitData = !!window.Telegram?.WebApp?.initData;
-  if (!hasInitData) return <NoTelegram />;
+  const inTelegram = !!window.Telegram?.WebApp;
+  if (!inTelegram) return <NoTelegram />;
   const Page = PAGES[tab];
   return (
     <>
