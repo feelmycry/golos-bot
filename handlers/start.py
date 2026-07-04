@@ -4,7 +4,7 @@ from aiogram.filters import CommandStart, Command, CommandObject
 from aiogram.fsm.context import FSMContext
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 
-from config import MINIAPP_URL
+from config import MINIAPP_URL, ADMIN_IDS
 from services.db import upsert_user, get_user_stats, get_user_session_detail, game_link_mentor
 
 router = Router()
@@ -26,7 +26,7 @@ _STAGE_LABELS = {
 }
 
 
-def _main_kb():
+def _main_kb(user_id: int = 0):
     b = InlineKeyboardBuilder()
     b.button(text="🎯 Начать тренировку", callback_data="start_training")
     b.button(text="📰 Анализ новостей", callback_data="news:menu")
@@ -34,7 +34,7 @@ def _main_kb():
     b.button(text="📈 Анализ акций (в разработке)", callback_data="stock:start")
     b.button(text="📚 Обучение", callback_data="learning:menu")
     b.button(text="🎮 Игра", callback_data="game:open")
-    if MINIAPP_URL:
+    if MINIAPP_URL and user_id in ADMIN_IDS:
         b.button(text="🎮 Играть", web_app=WebAppInfo(url=MINIAPP_URL))
     b.adjust(1)
     return b.as_markup()
@@ -140,14 +140,19 @@ async def cmd_start(message: Message, state: FSMContext, command: CommandObject 
         f"• Стратегии автоследования\n\n"
         f"Отвечай <b>голосовыми сообщениями</b> — я распознаю, проанализирую и отвечу как настоящий клиент.",
         parse_mode="HTML",
-        reply_markup=_main_kb(),
+        reply_markup=_main_kb(message.from_user.id),
     )
+
+
+@router.message(Command("myid"))
+async def cmd_myid(message: Message):
+    await message.answer(f"Твой Telegram ID: <code>{message.from_user.id}</code>", parse_mode="HTML")
 
 
 @router.message(Command("cancel"))
 async def cmd_cancel(message: Message, state: FSMContext):
     await state.clear()
-    await message.answer("Сессия сброшена. Выберите действие:", reply_markup=_main_kb())
+    await message.answer("Сессия сброшена. Выберите действие:", reply_markup=_main_kb(message.from_user.id))
 
 
 @router.callback_query(F.data == "back_to_menu")
@@ -156,7 +161,7 @@ async def back_to_menu(callback: CallbackQuery, state: FSMContext):
     name = callback.from_user.first_name or "Коллега"
     await callback.message.edit_text(
         f"Привет, {name}! Выберите действие:",
-        reply_markup=_main_kb(),
+        reply_markup=_main_kb(callback.from_user.id),
     )
     await callback.answer()
 
@@ -172,7 +177,7 @@ async def check_subscription(callback: CallbackQuery, state: FSMContext):
         f"• НСЖ\n• ПДС\n• ОПИФ\n• ОМС\n• Стратегии автоследования\n\n"
         f"Отвечай <b>голосовыми сообщениями</b> — я распознаю, проанализирую и отвечу как настоящий клиент.",
         parse_mode="HTML",
-        reply_markup=_main_kb(),
+        reply_markup=_main_kb(callback.from_user.id),
     )
     await callback.answer("✅ Добро пожаловать!")
 

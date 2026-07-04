@@ -1,8 +1,12 @@
+import logging
+
 from aiogram import BaseMiddleware
 from aiogram.types import CallbackQuery, InlineKeyboardButton, Message
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 
 from config import ADMIN_IDS
+
+log = logging.getLogger(__name__)
 
 CHANNEL_USERNAME = "@doiteasyeasydoit"
 CHANNEL_URL = "https://t.me/doiteasyeasydoit"
@@ -33,8 +37,9 @@ class SubscriptionMiddleware(BaseMiddleware):
                         chat_id=CHANNEL_USERNAME, user_id=user.id
                     )
                     is_member = member.status not in ("left", "kicked")
-                except Exception:
-                    is_member = True  # fail open if bot lacks admin rights
+                except Exception as e:
+                    log.warning("Subscription check failed for user %s: %s", user.id, e)
+                    is_member = False  # fail closed — block on error
 
                 if not is_member:
                     if isinstance(event, CallbackQuery):

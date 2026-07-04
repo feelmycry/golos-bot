@@ -11,7 +11,8 @@ export default function NavBar({ active, onSelect }) {
     <nav style={{
       position: "fixed", bottom: 0, left: 0, right: 0,
       display: "flex", background: "var(--secondary)",
-      borderTop: "1px solid rgba(0,0,0,0.08)", paddingBottom: "env(safe-area-inset-bottom)"
+      borderTop: "1px solid rgba(0,0,0,0.08)",
+      paddingBottom: "max(env(safe-area-inset-bottom, 0px), 8px)"
     }}>
       {TABS.map((t) => (
         <button key={t.id} onClick={() => onSelect(t.id)}

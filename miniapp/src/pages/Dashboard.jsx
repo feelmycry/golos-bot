@@ -7,6 +7,7 @@ export default function Dashboard() {
   const { data: daily, loading: dailyLoading, refetch: refetchDaily } = useApi("/api/daily");
 
   if (meLoading || dailyLoading) return <div className="page" style={{ textAlign: "center", paddingTop: 40 }}>⏳</div>;
+  if (!me) return <div className="page" style={{ textAlign: "center", paddingTop: 40, color: "var(--hint)" }}>⚠️ Не удалось загрузить профиль. Попробуйте перезапустить.</div>;
 
   const streak = me?.streak_days || 0;
 
