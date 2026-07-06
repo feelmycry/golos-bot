@@ -289,7 +289,7 @@ async def show_quiz_question(callback: CallbackQuery, state: FSMContext):
 
     q = quiz[q_idx]
     total = len(quiz)
-    options = ["А", "Б", "В", "Г"]
+    options = ["А", "Б", "В", "Г", "Д", "Е", "Ж", "З"]
 
     text = (
         f"🧠 <b>Тест: {lesson['title']}</b>\n"
@@ -312,7 +312,10 @@ async def show_quiz_question(callback: CallbackQuery, state: FSMContext):
     ))
 
     await state.set_state(LearningState.taking_quiz)
-    await state.update_data(lesson_id=lesson_id, q_idx=q_idx, score=0)
+    if q_idx == 0:
+        await state.update_data(lesson_id=lesson_id, q_idx=q_idx, score=0)
+    else:
+        await state.update_data(lesson_id=lesson_id, q_idx=q_idx)
 
     await callback.message.edit_text(text, parse_mode="HTML", reply_markup=kb.as_markup())
 
@@ -332,7 +335,7 @@ async def handle_answer(callback: CallbackQuery, state: FSMContext):
     quiz = lesson["quiz"]
     q = quiz[q_idx]
     correct = q["correct"]
-    options = ["А", "Б", "В", "Г"]
+    options = ["А", "Б", "В", "Г", "Д", "Е", "Ж", "З"]
 
     # Get current score from state
     fsm = await state.get_data()
@@ -352,7 +355,7 @@ async def handle_answer(callback: CallbackQuery, state: FSMContext):
         f"🧠 <b>Тест: {lesson['title']}</b>\n"
         f"<i>Вопрос {q_idx + 1} из {len(quiz)}</i>\n\n"
         f"<b>{q['q']}</b>\n\n"
-        f"{result_icon} {'Верно!' if is_correct else f'Неверно. Правильный ответ: {answer_label})'}\n"
+        f"{result_icon} {'Верно!' if is_correct else f'Неверно. Правильный ответ: {answer_label}'}\n"
     )
     if expl:
         text += f"\n💡 {expl}"
@@ -367,7 +370,7 @@ async def handle_answer(callback: CallbackQuery, state: FSMContext):
     else:
         kb.row(InlineKeyboardButton(
             text="📊 Результаты теста",
-            callback_data=f"learn:result:{lesson_id}:{score + (1 if is_correct else 0)}",
+            callback_data=f"learn:result:{lesson_id}:{score}",
         ))
 
     await callback.answer("✅ Верно!" if is_correct else "❌ Неверно")
