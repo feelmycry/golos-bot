@@ -10,6 +10,8 @@ from states.training import Training
 from services.whisper import transcribe_voice
 from services.claude import continue_dialog, get_feedback, get_hint, get_mid_feedback, get_session_summary
 from services.db import update_messages, complete_session, get_user_stats
+from services.subscription import is_subscribed
+from config import ADMIN_IDS
 
 router = Router()
 
@@ -117,6 +119,14 @@ async def handle_voice(message: Message, state: FSMContext):
 
     # Show client reply (with photo every 2nd time)
     await _send_client_reply(message, client_reply, msg_count, photo_urls)
+
+    # After the first free exchange, check subscription
+    if msg_count == 1 and message.from_user.id not in ADMIN_IDS:
+        if not await is_subscribed(message.from_user.id):
+            await state.clear()
+            from handlers.payment import show_paywall
+            await show_paywall(message)
+            return
 
 
 @router.message(Training.in_dialog, ~F.voice)

@@ -185,6 +185,16 @@ async def init_db() -> None:
             )
         """)
         await db.execute("""
+            CREATE TABLE IF NOT EXISTS subscriptions (
+                user_id    INTEGER PRIMARY KEY,
+                plan       TEXT    NOT NULL,
+                paid_until TEXT    NOT NULL,
+                payment_id TEXT,
+                created_at TEXT    DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (user_id) REFERENCES users(telegram_id)
+            )
+        """)
+        await db.execute("""
             CREATE TABLE IF NOT EXISTS game_coop_sessions (
                 id                 INTEGER PRIMARY KEY AUTOINCREMENT,
                 initiator_id       INTEGER NOT NULL,

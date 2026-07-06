@@ -12,6 +12,7 @@ from aiogram.utils.keyboard import InlineKeyboardBuilder
 
 from config import ADMIN_IDS
 from services.db import get_admin_stats, get_all_sessions_export, get_user_sessions, set_user_blocked
+from services.subscription import grant_subscription, get_subscription_info, PLANS
 
 
 class AdminMsg(StatesGroup):
@@ -336,3 +337,63 @@ async def admin_msg_send(message: Message, state: FSMContext):
         await message.answer(f"✅ Сообщение отправлено пользователю <code>{target_user_id}</code>.", parse_mode="HTML")
     except Exception as e:
         await message.answer(f"❌ Не удалось отправить: <code>{e}</code>", parse_mode="HTML")
+
+
+@router.message(Command("grant_sub"))
+async def cmd_grant_sub(message: Message):
+    """Usage: /grant_sub <user_id> <plan>   plan = quarter | year"""
+    if message.from_user.id not in ADMIN_IDS:
+        return
+    parts = message.text.split()
+    if len(parts) != 3 or parts[2] not in PLANS:
+        plans_str = " | ".join(PLANS.keys())
+        await message.answer(
+            f"Использование: <code>/grant_sub &lt;user_id&gt; &lt;plan&gt;</code>\n"
+            f"Планы: {plans_str}",
+            parse_mode="HTML",
+        )
+        return
+    try:
+        user_id = int(parts[1])
+    except ValueError:
+        await message.answer("❌ user_id должен быть числом", parse_mode="HTML")
+        return
+    plan = parts[2]
+    paid_until = await grant_subscription(user_id, plan)
+    await message.answer(
+        f"✅ Подписка выдана пользователю <code>{user_id}</code>\n"
+        f"Тариф: <b>{PLANS[plan]['label']}</b>\n"
+        f"До: <b>{paid_until.strftime('%d.%m.%Y')}</b>",
+        parse_mode="HTML",
+    )
+
+
+@router.message(Command("check_sub"))
+async def cmd_check_sub(message: Message):
+    """Usage: /check_sub <user_id>"""
+    if message.from_user.id not in ADMIN_IDS:
+        return
+    parts = message.text.split()
+    if len(parts) != 2:
+        await message.answer("Использование: <code>/check_sub &lt;user_id&gt;</code>", parse_mode="HTML")
+        return
+    try:
+        user_id = int(parts[1])
+    except ValueError:
+        await message.answer("❌ user_id должен быть числом")
+        return
+    info = await get_subscription_info(user_id)
+    if not info:
+        await message.answer(f"❌ Подписка для <code>{user_id}</code> не найдена", parse_mode="HTML")
+    else:
+        from datetime import date
+        from services.subscription import is_subscribed
+        active = await is_subscribed(user_id)
+        status = "✅ активна" if active else "⛔ истекла"
+        await message.answer(
+            f"👤 <code>{user_id}</code>\n"
+            f"Тариф: {info['plan']}\n"
+            f"До: {info['paid_until']}\n"
+            f"Статус: {status}",
+            parse_mode="HTML",
+        )
