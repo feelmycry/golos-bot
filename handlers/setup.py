@@ -32,6 +32,7 @@ def _scenario_kb():
     b = InlineKeyboardBuilder()
     b.button(text="💰 Оформление депозита", callback_data="scenario:deposit")
     b.button(text="🏦 Другая операция", callback_data="scenario:other")
+    b.button(text="🏠 Меню", callback_data="back_to_menu")
     b.adjust(1)
     return b.as_markup()
 
@@ -42,7 +43,9 @@ def _mode_kb():
     b.button(text="📍 Конкретный этап", callback_data="mode:stage")
     b.button(text="🔍 Подобрать продукт клиенту", callback_data="mode:identify")
     b.button(text="💬 Отработать возражение", callback_data="mode:objection")
-    b.adjust(1)
+    b.button(text="◀️ Назад", callback_data="setup:back:scenario")
+    b.button(text="🏠 Меню", callback_data="back_to_menu")
+    b.adjust(1, 1, 1, 1, 2)
     return b.as_markup()
 
 
@@ -50,6 +53,8 @@ def _objection_kb():
     b = InlineKeyboardBuilder()
     for i, (label, _) in enumerate(OBJECTIONS):
         b.button(text=label, callback_data=f"objection:{i}")
+    b.button(text="◀️ Назад", callback_data="setup:back:difficulty")
+    b.button(text="🏠 Меню", callback_data="back_to_menu")
     b.adjust(1)
     return b.as_markup()
 
@@ -59,7 +64,9 @@ def _difficulty_kb():
     b.button(text="😊 Лёгкий — клиент открыт и позитивен", callback_data="difficulty:easy")
     b.button(text="😐 Средний — реалистичный клиент", callback_data="difficulty:medium")
     b.button(text="😤 Сложный — скептик, закрытый, с возражениями", callback_data="difficulty:hard")
-    b.adjust(1)
+    b.button(text="◀️ Назад", callback_data="setup:back:cohort")
+    b.button(text="🏠 Меню", callback_data="back_to_menu")
+    b.adjust(1, 1, 1, 2)
     return b.as_markup()
 
 
@@ -70,11 +77,13 @@ def _stage_kb():
     b.button(text="📢 Презентация продукта", callback_data="stage:presentation")
     b.button(text="💬 Отработка возражений", callback_data="stage:objections")
     b.button(text="🤝 Закрытие сделки", callback_data="stage:closing")
-    b.adjust(1)
+    b.button(text="◀️ Назад", callback_data="setup:back:mode")
+    b.button(text="🏠 Меню", callback_data="back_to_menu")
+    b.adjust(1, 1, 1, 1, 1, 2)
     return b.as_markup()
 
 
-def _product_kb():
+def _product_kb(back_cb: str = "setup:back:mode"):
     b = InlineKeyboardBuilder()
     b.button(text="🏦 ПДС", callback_data="product:pds")
     b.button(text="🛡 НСЖ", callback_data="product:nsj")
@@ -82,17 +91,21 @@ def _product_kb():
     b.button(text="🥇 ОМС (металлические счета)", callback_data="product:oms")
     b.button(text="⚡ Стратегия (автоследование)", callback_data="product:strategy")
     b.button(text="💼 Портфель (диверсификация)", callback_data="product:portfolio")
-    b.adjust(1)
+    b.button(text="◀️ Назад", callback_data=back_cb)
+    b.button(text="🏠 Меню", callback_data="back_to_menu")
+    b.adjust(1, 1, 1, 1, 1, 1, 2)
     return b.as_markup()
 
 
-def _cohort_kb():
+def _cohort_kb(back_cb: str = "setup:back:product"):
     b = InlineKeyboardBuilder()
     b.button(text="🧑 Молодой (до 35)", callback_data="cohort:young")
     b.button(text="👔 Средний возраст (35–50)", callback_data="cohort:middle")
     b.button(text="🧓 Взрослый (50–60)", callback_data="cohort:adult")
     b.button(text="👴 Пенсионер (60+)", callback_data="cohort:pensioner")
-    b.adjust(1)
+    b.button(text="◀️ Назад", callback_data=back_cb)
+    b.button(text="🏠 Меню", callback_data="back_to_menu")
+    b.adjust(1, 1, 1, 1, 2)
     return b.as_markup()
 
 
@@ -100,8 +113,75 @@ def _dialog_kb():
     b = InlineKeyboardBuilder()
     b.button(text="💡 Подсказка", callback_data="dialog:hint")
     b.button(text="🏁 Завершить", callback_data="dialog:end")
-    b.adjust(2)
+    b.button(text="🏠 Меню", callback_data="back_to_menu")
+    b.adjust(2, 1)
     return b.as_markup()
+
+
+# ── Back navigation ──────────────────────────────────────────────────────────
+
+@router.callback_query(F.data == "setup:back:scenario")
+async def back_to_scenario(callback: CallbackQuery, state: FSMContext):
+    await state.set_state(Training.choosing_scenario)
+    await callback.message.edit_text("Выберите тип клиента:", reply_markup=_scenario_kb())
+    await callback.answer()
+
+
+@router.callback_query(F.data == "setup:back:mode")
+async def back_to_mode(callback: CallbackQuery, state: FSMContext):
+    data = await state.get_data()
+    scenario = data.get("scenario", "deposit")
+    label = "Оформление депозита" if scenario == "deposit" else "Другая операция"
+    await state.set_state(Training.choosing_mode)
+    await callback.message.edit_text(
+        f"Сценарий: <b>{label}</b>\n\nЧто хотите отработать?",
+        parse_mode="HTML",
+        reply_markup=_mode_kb(),
+    )
+    await callback.answer()
+
+
+@router.callback_query(F.data == "setup:back:stage")
+async def back_to_stage(callback: CallbackQuery, state: FSMContext):
+    await state.set_state(Training.choosing_stage)
+    await callback.message.edit_text("Выберите этап для отработки:", reply_markup=_stage_kb())
+    await callback.answer()
+
+
+@router.callback_query(F.data == "setup:back:product")
+async def back_to_product(callback: CallbackQuery, state: FSMContext):
+    data = await state.get_data()
+    mode = data.get("mode", "full")
+    back_cb = "setup:back:stage" if mode == "stage" else "setup:back:mode"
+    await state.set_state(Training.choosing_product)
+    await callback.message.edit_text(
+        "Какой продукт будете предлагать?",
+        reply_markup=_product_kb(back_cb),
+    )
+    await callback.answer()
+
+
+@router.callback_query(F.data == "setup:back:cohort")
+async def back_to_cohort(callback: CallbackQuery, state: FSMContext):
+    data = await state.get_data()
+    mode = data.get("mode", "full")
+    target_stage = data.get("target_stage")
+    if mode == "identify":
+        back_cb = "setup:back:mode"
+    elif target_stage == "greeting":
+        back_cb = "setup:back:stage"
+    else:
+        back_cb = "setup:back:product"
+    await state.set_state(Training.choosing_cohort)
+    await callback.message.edit_text("Выберите когортную группу клиента:", reply_markup=_cohort_kb(back_cb))
+    await callback.answer()
+
+
+@router.callback_query(F.data == "setup:back:difficulty")
+async def back_to_difficulty(callback: CallbackQuery, state: FSMContext):
+    await state.set_state(Training.choosing_difficulty)
+    await callback.message.edit_text("Выберите уровень сложности клиента:", reply_markup=_difficulty_kb())
+    await callback.answer()
 
 
 # ── Flow ─────────────────────────────────────────────────────────────────────
@@ -137,7 +217,7 @@ async def choose_mode(callback: CallbackQuery, state: FSMContext):
         await state.update_data(target_stage="full")
         await callback.message.edit_text(
             "Полная встреча\n\nКакой продукт планируете предложить клиенту?",
-            reply_markup=_product_kb(),
+            reply_markup=_product_kb("setup:back:mode"),
         )
         await state.set_state(Training.choosing_product)
     elif mode == "identify":
@@ -148,7 +228,7 @@ async def choose_mode(callback: CallbackQuery, state: FSMContext):
             "и самостоятельно определить, что ему подойдёт.\n\n"
             "Выберите когортную группу клиента:",
             parse_mode="HTML",
-            reply_markup=_cohort_kb(),
+            reply_markup=_cohort_kb("setup:back:mode"),
         )
         await state.set_state(Training.choosing_cohort)
     elif mode == "objection":
@@ -156,7 +236,7 @@ async def choose_mode(callback: CallbackQuery, state: FSMContext):
         await callback.message.edit_text(
             "💬 <b>Отработка возражения</b>\n\nКакой продукт будете предлагать?",
             parse_mode="HTML",
-            reply_markup=_product_kb(),
+            reply_markup=_product_kb("setup:back:mode"),
         )
         await state.set_state(Training.choosing_product)
     else:
@@ -172,7 +252,7 @@ async def choose_stage(callback: CallbackQuery, state: FSMContext):
 
     if stage == "greeting":
         await state.update_data(product=None)
-        await callback.message.edit_text("Выберите когортную группу клиента:", reply_markup=_cohort_kb())
+        await callback.message.edit_text("Выберите когортную группу клиента:", reply_markup=_cohort_kb("setup:back:stage"))
         await state.set_state(Training.choosing_cohort)
     else:
         stage_labels = {
@@ -184,7 +264,7 @@ async def choose_stage(callback: CallbackQuery, state: FSMContext):
         await callback.message.edit_text(
             f"Этап: <b>{stage_labels.get(stage, stage)}</b>\n\nКакой продукт будете предлагать?",
             parse_mode="HTML",
-            reply_markup=_product_kb(),
+            reply_markup=_product_kb("setup:back:stage"),
         )
         await state.set_state(Training.choosing_product)
     await callback.answer()

@@ -29,10 +29,10 @@ _STAGE_LABELS = {
 
 def _main_kb(user_id: int = 0, miniapp_token: str = ""):
     b = InlineKeyboardBuilder()
-    b.button(text="🎯 Начать тренировку", callback_data="start_training")
+    b.button(text="🎯 Тренировка", callback_data="start_training")
     b.button(text="📰 Анализ новостей", callback_data="news:menu")
     b.button(text="🌅 Рыночный брифинг", callback_data="briefing:open")
-    b.button(text="📈 Анализ акций (в разработке)", callback_data="stock:start")
+    b.button(text="📈 Анализ акций", callback_data="stock:start")
     b.button(text="📚 Обучение", callback_data="learning:menu")
     b.button(text="🎮 Игра", callback_data="game:open")
     if MINIAPP_URL and user_id in ADMIN_IDS:
@@ -250,7 +250,7 @@ async def show_stats(callback: CallbackQuery):
         lines.append("\nПока нет ни одной сессии. Начните первую тренировку!")
 
     b = InlineKeyboardBuilder()
-    b.button(text="🎯 Начать тренировку", callback_data="start_training")
+    b.button(text="🎯 Тренировка", callback_data="start_training")
     if stats["completed"] > 0:
         b.button(text="📋 История сессий", callback_data="stats:history")
     b.button(text="◀️ Назад", callback_data="back_to_menu")

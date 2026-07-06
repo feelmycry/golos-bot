@@ -4,6 +4,7 @@ import os
 
 from aiogram import Bot, Dispatcher
 from aiogram.fsm.storage.memory import MemoryStorage
+from aiogram.types import BotCommand
 
 from config import TELEGRAM_TOKEN, REDIS_URL
 from handlers import start, setup, dialog, news_analysis, briefing, admin, stocks, learning, game
@@ -59,6 +60,12 @@ async def main():
         server = uvicorn.Server(config)
         asyncio.create_task(server.serve())
         logging.info("API server started on port %d", port)
+
+    await bot.set_my_commands([
+        BotCommand(command="start", description="🏠 Главное меню"),
+        BotCommand(command="cancel", description="❌ Отменить и вернуться в меню"),
+        BotCommand(command="myid", description="🔑 Мой Telegram ID"),
+    ])
 
     logging.info("Bot started")
     await dp.start_polling(bot, allowed_updates=["message", "callback_query"])
