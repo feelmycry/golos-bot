@@ -42,10 +42,9 @@ def _mode_kb():
     b.button(text="🎯 Полная встреча", callback_data="mode:full")
     b.button(text="📍 Конкретный этап", callback_data="mode:stage")
     b.button(text="🔍 Подобрать продукт клиенту", callback_data="mode:identify")
-    b.button(text="💬 Отработать возражение", callback_data="mode:objection")
     b.button(text="◀️ Назад", callback_data="setup:back:scenario")
     b.button(text="🏠 Меню", callback_data="back_to_menu")
-    b.adjust(1, 1, 1, 1, 2)
+    b.adjust(1, 1, 1, 2)
     return b.as_markup()
 
 
