@@ -15,6 +15,8 @@ from services.db import get_admin_stats, get_all_sessions_export, get_user_sessi
 from services.subscription import (
     grant_subscription, get_subscription_info, PLANS,
     grant_product_access, PRODUCT_PLANS,
+    get_all_subscriptions, get_all_product_access,
+    revoke_subscription, revoke_product_access,
 )
 
 
@@ -78,8 +80,9 @@ def _users_kb(users: list) -> InlineKeyboardBuilder:
         blocked_icon = "🚫 " if u.get("is_blocked") else "👤 "
         label = f"{blocked_icon}{name}{uname}"
         kb.row(InlineKeyboardButton(text=label, callback_data=f"admin:user:{u['telegram_id']}"))
-    kb.row(InlineKeyboardButton(text="🎁 Выдать доступ",  callback_data="admin:grant"))
-    kb.row(InlineKeyboardButton(text="📥 Выгрузить CSV",  callback_data="admin:export_csv"))
+    kb.row(InlineKeyboardButton(text="🎁 Выдать доступ",   callback_data="admin:grant"))
+    kb.row(InlineKeyboardButton(text="📋 Подписки",        callback_data="admin:subs"))
+    kb.row(InlineKeyboardButton(text="📥 Выгрузить CSV",   callback_data="admin:export_csv"))
     return kb
 
 
@@ -531,3 +534,85 @@ async def cmd_check_sub(message: Message):
             f"Статус: {status}",
             parse_mode="HTML",
         )
+
+
+# ── Subscriptions list & revoke ───────────────────────────────────────────────
+
+@router.callback_query(F.data == "admin:subs")
+async def admin_subs_list(callback: CallbackQuery):
+    if callback.from_user.id not in ADMIN_IDS:
+        await callback.answer()
+        return
+    await callback.answer()
+
+    from datetime import date as _date
+    today = _date.today().isoformat()
+
+    subs = await get_all_subscriptions()
+    prod = await get_all_product_access()
+
+    lines = ["📋 <b>Активные подписки</b>\n"]
+
+    if subs:
+        lines.append("<b>Тренировка:</b>")
+        for s in subs:
+            active = "✅" if s["paid_until"] >= today else "⛔"
+            lines.append(f"  {active} <code>{s['user_id']}</code> — {s['plan']} до {s['paid_until']}")
+    else:
+        lines.append("<i>Тренировка: нет</i>")
+
+    lines.append("")
+    if prod:
+        lines.append("<b>Продукты:</b>")
+        for p in prod:
+            active = "✅" if p["paid_until"] >= today else "⛔"
+            lines.append(f"  {active} <code>{p['user_id']}</code> — {p['product']} до {p['paid_until']}")
+    else:
+        lines.append("<i>Продукты: нет</i>")
+
+    kb = InlineKeyboardBuilder()
+    # Revoke buttons for each active training sub
+    for s in subs:
+        if s["paid_until"] >= today:
+            kb.row(InlineKeyboardButton(
+                text=f"❌ Отозвать тренировку у {s['user_id']}",
+                callback_data=f"admin:revoke_sub:{s['user_id']}",
+            ))
+    # Revoke buttons for each active product access
+    for p in prod:
+        if p["paid_until"] >= today:
+            kb.row(InlineKeyboardButton(
+                text=f"❌ Отозвать {p['product']} у {p['user_id']}",
+                callback_data=f"admin:revoke_prod:{p['user_id']}:{p['product']}",
+            ))
+    kb.row(InlineKeyboardButton(text="← Назад", callback_data="admin:back"))
+
+    await callback.message.edit_text(
+        "\n".join(lines), parse_mode="HTML", reply_markup=kb.as_markup()
+    )
+
+
+@router.callback_query(F.data.startswith("admin:revoke_sub:"))
+async def admin_revoke_sub(callback: CallbackQuery):
+    if callback.from_user.id not in ADMIN_IDS:
+        await callback.answer()
+        return
+    user_id = int(callback.data[len("admin:revoke_sub:"):])
+    await revoke_subscription(user_id)
+    await callback.answer(f"✅ Подписка на тренировку отозвана у {user_id}", show_alert=True)
+    callback.data = "admin:subs"
+    await admin_subs_list(callback)
+
+
+@router.callback_query(F.data.startswith("admin:revoke_prod:"))
+async def admin_revoke_prod(callback: CallbackQuery):
+    if callback.from_user.id not in ADMIN_IDS:
+        await callback.answer()
+        return
+    parts = callback.data.split(":")
+    user_id = int(parts[2])
+    product = parts[3]
+    await revoke_product_access(user_id, product)
+    await callback.answer(f"✅ Доступ к {product} отозван у {user_id}", show_alert=True)
+    callback.data = "admin:subs"
+    await admin_subs_list(callback)

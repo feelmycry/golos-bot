@@ -120,8 +120,8 @@ async def handle_voice(message: Message, state: FSMContext):
     # Show client reply (with photo every 2nd time)
     await _send_client_reply(message, client_reply, msg_count, photo_urls)
 
-    # After the first free exchange, check subscription
-    if msg_count == 1 and message.from_user.id not in ADMIN_IDS:
+    # After the first free exchange, block non-subscribers on every message
+    if msg_count >= 1 and message.from_user.id not in ADMIN_IDS:
         if not await is_subscribed(message.from_user.id):
             await state.clear()
             from handlers.payment import show_paywall

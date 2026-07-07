@@ -70,6 +70,39 @@ async def grant_product_access(user_id: int, product: str, plan: str, payment_id
     return paid_until
 
 
+async def get_all_subscriptions() -> list[dict]:
+    async with aiosqlite.connect(DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        rows = await (await db.execute(
+            "SELECT user_id, plan, paid_until FROM subscriptions ORDER BY paid_until DESC"
+        )).fetchall()
+        return [dict(r) for r in rows]
+
+
+async def get_all_product_access() -> list[dict]:
+    async with aiosqlite.connect(DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        rows = await (await db.execute(
+            "SELECT user_id, product, plan, paid_until FROM product_access ORDER BY paid_until DESC"
+        )).fetchall()
+        return [dict(r) for r in rows]
+
+
+async def revoke_subscription(user_id: int) -> None:
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.execute("DELETE FROM subscriptions WHERE user_id = ?", (user_id,))
+        await db.commit()
+
+
+async def revoke_product_access(user_id: int, product: str) -> None:
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.execute(
+            "DELETE FROM product_access WHERE user_id = ? AND product = ?",
+            (user_id, product)
+        )
+        await db.commit()
+
+
 async def grant_subscription(user_id: int, plan: str, payment_id: str | None = None) -> date:
     plan_days = PLANS.get(plan, {}).get("days", 90)
     async with aiosqlite.connect(DB_PATH) as db:
