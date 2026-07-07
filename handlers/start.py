@@ -35,6 +35,7 @@ def _main_kb(user_id: int = 0, miniapp_token: str = ""):
     b.button(text="📈 Анализ акций", callback_data="stock:start")
     b.button(text="📚 Обучение", callback_data="learning:menu")
     b.button(text="🎮 Игра", callback_data="game:open")
+    b.button(text="🆘 Поддержка", callback_data="support:menu")
     if MINIAPP_URL and user_id in ADMIN_IDS:
         url = f"{MINIAPP_URL}?t={miniapp_token}" if miniapp_token else MINIAPP_URL
         b.button(text="🎮 Играть", web_app=WebAppInfo(url=url))

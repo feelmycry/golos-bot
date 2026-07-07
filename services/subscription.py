@@ -7,6 +7,11 @@ PLANS = {
     "year":      {"days": 365, "price": 1790, "label": "12 месяцев"},
 }
 
+PRODUCT_PLANS = {
+    "learning_basic": {"days": 36500, "price": 200,  "label": "Базовый уровень (навсегда)"},
+    "stocks_monthly": {"days": 30,    "price": 1400, "label": "Анализ акций — 1 месяц"},
+}
+
 
 async def is_subscribed(user_id: int) -> bool:
     async with aiosqlite.connect(DB_PATH) as db:
@@ -28,6 +33,41 @@ async def get_subscription_info(user_id: int) -> dict | None:
         if not row:
             return None
         return {"plan": row["plan"], "paid_until": row["paid_until"]}
+
+
+async def is_product_subscribed(user_id: int, product: str) -> bool:
+    async with aiosqlite.connect(DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        row = await (await db.execute(
+            "SELECT paid_until FROM product_access WHERE user_id = ? AND product = ?",
+            (user_id, product)
+        )).fetchone()
+        if not row:
+            return False
+        return date.fromisoformat(row["paid_until"]) >= date.today()
+
+
+async def grant_product_access(user_id: int, product: str, plan: str, payment_id: str | None = None) -> date:
+    plan_days = PRODUCT_PLANS.get(plan, {}).get("days", 30)
+    async with aiosqlite.connect(DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        row = await (await db.execute(
+            "SELECT paid_until FROM product_access WHERE user_id = ? AND product = ?",
+            (user_id, product)
+        )).fetchone()
+        today = date.today()
+        if row and date.fromisoformat(row["paid_until"]) > today:
+            paid_until = date.fromisoformat(row["paid_until"]) + timedelta(days=plan_days)
+        else:
+            paid_until = today + timedelta(days=plan_days)
+        await db.execute("""
+            INSERT INTO product_access (user_id, product, plan, paid_until, payment_id)
+            VALUES (?, ?, ?, ?, ?)
+            ON CONFLICT(user_id, product) DO UPDATE SET
+                plan=excluded.plan, paid_until=excluded.paid_until, payment_id=excluded.payment_id
+        """, (user_id, product, plan, paid_until.isoformat(), payment_id))
+        await db.commit()
+    return paid_until
 
 
 async def grant_subscription(user_id: int, plan: str, payment_id: str | None = None) -> date:

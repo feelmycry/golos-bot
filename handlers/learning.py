@@ -7,8 +7,12 @@ from aiogram.fsm.context import FSMContext
 from aiogram.types import CallbackQuery, InlineKeyboardButton
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 
+from config import ADMIN_IDS
 from services.db import get_learning_progress, mark_lesson_read, save_quiz_result
+from services.subscription import is_product_subscribed
 from states.learning import LearningState
+
+FREE_LESSONS_M1 = 6  # first N lessons are free
 
 router = Router()
 
@@ -105,13 +109,20 @@ async def learning_menu(callback: CallbackQuery):
     course = _get_course()
     kb = InlineKeyboardBuilder()
 
+    is_admin = callback.from_user.id in ADMIN_IDS
     for mod in course["modules"]:
         icon, label = _MOD_LABELS.get(mod["id"], ("📚", mod["level"]))
         if mod["id"] in _LOCKED_MODS:
-            kb.row(InlineKeyboardButton(
-                text=f"🔒 {label} — скоро",
-                callback_data=f"learn:locked:{mod['id']}",
-            ))
+            if is_admin:
+                kb.row(InlineKeyboardButton(
+                    text=f"{icon} {label} 👁",
+                    callback_data=f"learn:mod:{mod['id']}",
+                ))
+            else:
+                kb.row(InlineKeyboardButton(
+                    text=f"🔒 {label} — скоро",
+                    callback_data=f"learn:locked:{mod['id']}",
+                ))
         else:
             kb.row(InlineKeyboardButton(
                 text=f"{icon} {label}",
@@ -145,7 +156,7 @@ async def locked_module(callback: CallbackQuery):
 @router.callback_query(F.data.startswith("learn:mod:"))
 async def module_lessons(callback: CallbackQuery):
     mod_id = callback.data[len("learn:mod:"):]
-    if mod_id in _LOCKED_MODS:
+    if mod_id in _LOCKED_MODS and callback.from_user.id not in ADMIN_IDS:
         await callback.answer("🔒 Этот уровень пока недоступен.", show_alert=True)
         return
     await callback.answer()
@@ -166,12 +177,15 @@ async def module_lessons(callback: CallbackQuery):
         f"\nПройдено: {completed}/{len(lessons)} уроков\n",
     ]
 
+    is_admin = callback.from_user.id in ADMIN_IDS
     kb = InlineKeyboardBuilder()
-    for lesson in lessons:
+    for i, lesson in enumerate(lessons):
         p_icon = _progress_icon(progress, lesson["id"])
         dur = f"{lesson['duration']} мин"
+        is_locked = mod_id == "m1" and i >= FREE_LESSONS_M1 and not is_admin
+        lock = "🔒 " if is_locked else ""
         kb.row(InlineKeyboardButton(
-            text=f"{p_icon} {lesson['title']} · {dur}",
+            text=f"{p_icon} {lock}{lesson['title']} · {dur}",
             callback_data=f"learn:lesson:{lesson['id']}:0",
         ))
 
@@ -198,6 +212,15 @@ async def show_lesson(callback: CallbackQuery):
     if not lesson:
         await callback.answer("Урок не найден", show_alert=True)
         return
+
+    # Paywall: m1 lessons 7+ require learning_basic subscription
+    if mod and mod["id"] == "m1" and callback.from_user.id not in ADMIN_IDS:
+        lesson_num = int(lesson_id[3:]) if lesson_id[2:3] == "l" and lesson_id[3:].isdigit() else 0
+        if lesson_num > FREE_LESSONS_M1:
+            if not await is_product_subscribed(callback.from_user.id, "learning_basic"):
+                from handlers.payment import show_learning_paywall
+                await show_learning_paywall(callback)
+                return
 
     content = _clean_html(lesson["content"])
     pages = _paginate(content)

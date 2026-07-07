@@ -7,7 +7,7 @@ from aiogram.fsm.storage.memory import MemoryStorage
 from aiogram.types import BotCommand
 
 from config import TELEGRAM_TOKEN, REDIS_URL
-from handlers import start, setup, dialog, news_analysis, briefing, admin, stocks, learning, game, payment
+from handlers import start, setup, dialog, news_analysis, briefing, admin, stocks, learning, game, payment, support
 from handlers.game import streak_reminder_task
 from middlewares.block import BlockMiddleware
 from middlewares.subscription import SubscriptionMiddleware
@@ -41,6 +41,7 @@ async def main():
     dp.callback_query.middleware(SubscriptionMiddleware())
 
     dp.include_router(payment.router)
+    dp.include_router(support.router)
     dp.include_router(start.router)
     dp.include_router(setup.router)
     dp.include_router(dialog.router)

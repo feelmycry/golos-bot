@@ -195,6 +195,17 @@ async def init_db() -> None:
             )
         """)
         await db.execute("""
+            CREATE TABLE IF NOT EXISTS product_access (
+                user_id    INTEGER NOT NULL,
+                product    TEXT    NOT NULL,
+                plan       TEXT    NOT NULL,
+                paid_until TEXT    NOT NULL,
+                payment_id TEXT,
+                created_at TEXT    DEFAULT CURRENT_TIMESTAMP,
+                PRIMARY KEY (user_id, product)
+            )
+        """)
+        await db.execute("""
             CREATE TABLE IF NOT EXISTS game_coop_sessions (
                 id                 INTEGER PRIMARY KEY AUTOINCREMENT,
                 initiator_id       INTEGER NOT NULL,

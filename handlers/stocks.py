@@ -11,9 +11,21 @@ from aiogram.types import (
 )
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 
+from config import ADMIN_IDS
 from services import dohod, edisclosure, moex, smartlab
 from services.claude import analyze_financial_report_pdf, analyze_stock
+from services.subscription import is_product_subscribed
 from states.stocks import StocksState
+
+
+async def _check_stocks_access(callback: CallbackQuery) -> bool:
+    if callback.from_user.id in ADMIN_IDS:
+        return True
+    if await is_product_subscribed(callback.from_user.id, "stocks"):
+        return True
+    from handlers.payment import show_stocks_paywall
+    await show_stocks_paywall(callback)
+    return False
 
 router = Router()
 
@@ -177,6 +189,8 @@ async def _show_company_card(target, ticker: str, name: str):
 
 @router.callback_query(F.data.startswith("stock:multi:"))
 async def stock_multipliers(callback: CallbackQuery):
+    if not await _check_stocks_access(callback):
+        return
     ticker = callback.data[len("stock:multi:"):]
     await callback.answer()
     await callback.message.edit_text(f"📈 Загружаю мультипликаторы {ticker}...")
@@ -220,6 +234,8 @@ async def stock_multipliers(callback: CallbackQuery):
 
 @router.callback_query(F.data.startswith("stock:divs:"))
 async def stock_dividends(callback: CallbackQuery):
+    if not await _check_stocks_access(callback):
+        return
     ticker = callback.data[len("stock:divs:"):]
     await callback.answer()
     await callback.message.edit_text(f"💸 Загружаю дивиденды {ticker}...")
@@ -275,6 +291,8 @@ async def stock_dividends(callback: CallbackQuery):
 
 @router.callback_query(F.data.startswith("stock:book:"))
 async def stock_orderbook(callback: CallbackQuery):
+    if not await _check_stocks_access(callback):
+        return
     ticker = callback.data[len("stock:book:"):]
     await callback.answer()
     await callback.message.edit_text(f"📋 Загружаю стакан {ticker}...")
@@ -323,6 +341,8 @@ async def stock_orderbook(callback: CallbackQuery):
 
 @router.callback_query(F.data.startswith("stock:reports:"))
 async def stock_reports(callback: CallbackQuery):
+    if not await _check_stocks_access(callback):
+        return
     ticker = callback.data[len("stock:reports:"):]
     await callback.answer()
     await callback.message.edit_text(f"📄 Ищу отчётность {ticker} на e-disclosure.ru...")
@@ -553,6 +573,8 @@ async def stock_pdf_ai(callback: CallbackQuery):
 
 @router.callback_query(F.data.startswith("stock:ai:"))
 async def stock_ai_analysis(callback: CallbackQuery):
+    if not await _check_stocks_access(callback):
+        return
     ticker = callback.data[len("stock:ai:"):]
     await callback.answer()
     await callback.message.edit_text("🤖 Собираю данные и анализирую...")
