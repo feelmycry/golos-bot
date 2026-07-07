@@ -148,7 +148,7 @@ async def cmd_start(message: Message, state: FSMContext, command: CommandObject 
     )
 
 
-@router.message(Command("admin"), ~F.from_user.id.in_(ADMIN_IDS))
+@router.message(Command("admin"))
 async def cmd_admin_denied(message: Message):
     await message.answer("❌ У вас нет доступа к этой команде.")
 
