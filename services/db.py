@@ -270,6 +270,19 @@ async def complete_session(session_id: int, final_feedback: str) -> None:
         await db.commit()
 
 
+async def get_user_by_username(username: str) -> dict | None:
+    username = username.lstrip("@")
+    async with aiosqlite.connect(DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        row = await (await db.execute(
+            "SELECT telegram_id, username, first_name FROM users WHERE LOWER(username) = LOWER(?)",
+            (username,)
+        )).fetchone()
+        if not row:
+            return None
+        return {"telegram_id": row["telegram_id"], "username": row["username"], "first_name": row["first_name"]}
+
+
 async def get_admin_stats() -> dict:
     async with aiosqlite.connect(DB_PATH) as db:
         db.row_factory = aiosqlite.Row

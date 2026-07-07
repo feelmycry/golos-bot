@@ -11,14 +11,32 @@ from aiogram.types import BufferedInputFile, CallbackQuery, InlineKeyboardButton
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 
 from config import ADMIN_IDS
-from services.db import get_admin_stats, get_all_sessions_export, get_user_sessions, set_user_blocked
-from services.subscription import grant_subscription, get_subscription_info, PLANS
+from services.db import get_admin_stats, get_all_sessions_export, get_user_sessions, set_user_blocked, get_user_by_username
+from services.subscription import (
+    grant_subscription, get_subscription_info, PLANS,
+    grant_product_access, PRODUCT_PLANS,
+)
 
 
 class AdminMsg(StatesGroup):
     waiting_text = State()
 
+
+class AdminGrant(StatesGroup):
+    waiting_user = State()
+
 router = Router()
+
+
+def _grant_products_kb(user_id: int):
+    b = InlineKeyboardBuilder()
+    b.button(text="🎯 Тренировка — 6 мес",      callback_data=f"admin:gd:{user_id}:half_year:sub")
+    b.button(text="🎯 Тренировка — 12 мес",     callback_data=f"admin:gd:{user_id}:year:sub")
+    b.button(text="📚 Базовый уровень обучения", callback_data=f"admin:gd:{user_id}:learning_basic:prod")
+    b.button(text="📈 Анализ акций — 1 мес",    callback_data=f"admin:gd:{user_id}:stocks_monthly:prod")
+    b.button(text="❌ Отмена", callback_data="admin:back")
+    b.adjust(1)
+    return b.as_markup()
 
 _STAGE_LABELS = {
     "greeting": "Приветствие",
@@ -60,7 +78,8 @@ def _users_kb(users: list) -> InlineKeyboardBuilder:
         blocked_icon = "🚫 " if u.get("is_blocked") else "👤 "
         label = f"{blocked_icon}{name}{uname}"
         kb.row(InlineKeyboardButton(text=label, callback_data=f"admin:user:{u['telegram_id']}"))
-    kb.row(InlineKeyboardButton(text="📥 Выгрузить CSV", callback_data="admin:export_csv"))
+    kb.row(InlineKeyboardButton(text="🎁 Выдать доступ",  callback_data="admin:grant"))
+    kb.row(InlineKeyboardButton(text="📥 Выгрузить CSV",  callback_data="admin:export_csv"))
     return kb
 
 
@@ -204,6 +223,10 @@ async def admin_user_detail(callback: CallbackQuery):
 
     kb = InlineKeyboardBuilder()
     kb.row(InlineKeyboardButton(
+        text="🎁 Выдать доступ",
+        callback_data=f"admin:grant:{user_id}",
+    ))
+    kb.row(InlineKeyboardButton(
         text="✉️ Написать в ЛС",
         callback_data=f"admin:msg:{user_id}",
     ))
@@ -337,6 +360,117 @@ async def admin_msg_send(message: Message, state: FSMContext):
         await message.answer(f"✅ Сообщение отправлено пользователю <code>{target_user_id}</code>.", parse_mode="HTML")
     except Exception as e:
         await message.answer(f"❌ Не удалось отправить: <code>{e}</code>", parse_mode="HTML")
+
+
+# ── Grant access flow ─────────────────────────────────────────────────────────
+
+@router.callback_query(F.data == "admin:grant")
+async def admin_grant_start(callback: CallbackQuery, state: FSMContext):
+    if callback.from_user.id not in ADMIN_IDS:
+        await callback.answer()
+        return
+    await state.set_state(AdminGrant.waiting_user)
+    await callback.answer()
+    b = InlineKeyboardBuilder()
+    b.button(text="❌ Отмена", callback_data="admin:back")
+    b.adjust(1)
+    await callback.message.edit_text(
+        "🎁 <b>Выдать доступ</b>\n\n"
+        "Введите ID пользователя или его @username:",
+        parse_mode="HTML",
+        reply_markup=b.as_markup(),
+    )
+
+
+@router.callback_query(F.data.startswith("admin:grant:"))
+async def admin_grant_known_user(callback: CallbackQuery, state: FSMContext):
+    if callback.from_user.id not in ADMIN_IDS:
+        await callback.answer()
+        return
+    user_id = int(callback.data[len("admin:grant:"):])
+    await state.clear()
+    await callback.answer()
+    await callback.message.edit_text(
+        f"🎁 <b>Выдать доступ</b> — пользователь <code>{user_id}</code>\n\n"
+        "Выберите тип доступа:",
+        parse_mode="HTML",
+        reply_markup=_grant_products_kb(user_id),
+    )
+
+
+@router.message(AdminGrant.waiting_user)
+async def admin_grant_lookup(message: Message, state: FSMContext):
+    if message.from_user.id not in ADMIN_IDS:
+        return
+    query = (message.text or "").strip()
+
+    user = None
+    user_id = None
+
+    if query.lstrip("@").isdigit():
+        user_id = int(query.lstrip("@"))
+    elif query.startswith("@") or not query.isdigit():
+        user = await get_user_by_username(query.lstrip("@"))
+        if user:
+            user_id = user["telegram_id"]
+
+    if not user_id:
+        b = InlineKeyboardBuilder()
+        b.button(text="❌ Отмена", callback_data="admin:back")
+        b.adjust(1)
+        await message.answer(
+            f"❌ Пользователь <code>{query}</code> не найден.\n"
+            "Введите ID или @username ещё раз:",
+            parse_mode="HTML",
+            reply_markup=b.as_markup(),
+        )
+        return
+
+    await state.clear()
+    name_str = ""
+    if user:
+        name_str = f" ({user.get('first_name', '')} @{user.get('username', '')})"
+    await message.answer(
+        f"🎁 <b>Выдать доступ</b> — <code>{user_id}</code>{name_str}\n\n"
+        "Выберите тип доступа:",
+        parse_mode="HTML",
+        reply_markup=_grant_products_kb(user_id),
+    )
+
+
+@router.callback_query(F.data.startswith("admin:gd:"))
+async def admin_grant_do(callback: CallbackQuery, state: FSMContext):
+    if callback.from_user.id not in ADMIN_IDS:
+        await callback.answer()
+        return
+    # admin:gd:{user_id}:{plan}:{kind}  kind=sub|prod
+    parts = callback.data.split(":")
+    user_id = int(parts[2])
+    kind = parts[-1]          # "sub" or "prod"
+    plan = "_".join(parts[3:-1])  # handles underscores in plan names
+
+    await state.clear()
+
+    if kind == "sub":
+        paid_until = await grant_subscription(user_id, plan)
+        label = PLANS.get(plan, {}).get("label", plan)
+    else:
+        product_map = {"learning_basic": "learning_basic", "stocks_monthly": "stocks"}
+        product = product_map.get(plan, plan)
+        paid_until = await grant_product_access(user_id, product, plan)
+        label = PRODUCT_PLANS.get(plan, {}).get("label", plan)
+
+    await callback.answer("✅ Доступ выдан!", show_alert=True)
+    await callback.message.edit_text(
+        f"✅ <b>Доступ выдан</b>\n\n"
+        f"Пользователь: <code>{user_id}</code>\n"
+        f"Тип: <b>{label}</b>\n"
+        f"Действует до: <b>{paid_until.strftime('%d.%m.%Y')}</b>",
+        parse_mode="HTML",
+        reply_markup=InlineKeyboardBuilder().row(
+            InlineKeyboardButton(text="← Назад к статистике", callback_data="admin:back")
+        ).as_markup(),
+    )
 
 
 @router.message(Command("grant_sub"))
