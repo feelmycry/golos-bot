@@ -1,10 +1,11 @@
 import csv
 import html
 import io
+import logging
 from datetime import datetime, date as _date
 
 from aiogram import F, Router
-from aiogram.filters import Command
+from aiogram.filters import Command, BaseFilter
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.types import BufferedInputFile, CallbackQuery, InlineKeyboardButton, Message
@@ -22,6 +23,16 @@ from services.subscription import (
     revoke_subscription, revoke_product_access,
 )
 
+log = logging.getLogger(__name__)
+
+
+class IsAdmin(BaseFilter):
+    async def __call__(self, event: Message | CallbackQuery) -> bool:
+        result = event.from_user.id in ADMIN_IDS
+        if not result:
+            log.warning("Admin access denied for user %s (ADMIN_IDS=%s)", event.from_user.id, ADMIN_IDS)
+        return result
+
 
 class AdminMsg(StatesGroup):
     waiting_text = State()
@@ -32,8 +43,8 @@ class AdminGrant(StatesGroup):
 
 
 router = Router()
-router.callback_query.filter(F.from_user.id.in_(ADMIN_IDS))
-router.message.filter(F.from_user.id.in_(ADMIN_IDS))
+router.message.filter(IsAdmin())
+router.callback_query.filter(IsAdmin())
 
 _STAGE_LABELS = {
     "greeting": "Приветствие",

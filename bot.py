@@ -6,7 +6,7 @@ from aiogram import Bot, Dispatcher
 from aiogram.fsm.storage.memory import MemoryStorage
 from aiogram.types import BotCommand
 
-from config import TELEGRAM_TOKEN, REDIS_URL
+from config import TELEGRAM_TOKEN, REDIS_URL, ADMIN_IDS
 from handlers import start, setup, dialog, news_analysis, briefing, admin, stocks, learning, game, payment, support
 from handlers.game import streak_reminder_task
 from middlewares.block import BlockMiddleware
@@ -69,7 +69,7 @@ async def main():
         BotCommand(command="myid", description="🔑 Мой Telegram ID"),
     ])
 
-    logging.info("Bot started")
+    logging.info("Bot started. ADMIN_IDS=%s", ADMIN_IDS)
     await dp.start_polling(bot, allowed_updates=["message", "callback_query", "pre_checkout_query"])
 
 
