@@ -32,6 +32,8 @@ class AdminGrant(StatesGroup):
 
 
 router = Router()
+router.callback_query.filter(F.from_user.id.in_(ADMIN_IDS))
+router.message.filter(F.from_user.id.in_(ADMIN_IDS))
 
 _STAGE_LABELS = {
     "greeting": "Приветствие",

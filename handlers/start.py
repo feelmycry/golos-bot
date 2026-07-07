@@ -148,6 +148,11 @@ async def cmd_start(message: Message, state: FSMContext, command: CommandObject 
     )
 
 
+@router.message(Command("admin"), ~F.from_user.id.in_(ADMIN_IDS))
+async def cmd_admin_denied(message: Message):
+    await message.answer("❌ У вас нет доступа к этой команде.")
+
+
 @router.message(Command("myid"))
 async def cmd_myid(message: Message):
     await message.answer(f"Твой Telegram ID: <code>{message.from_user.id}</code>", parse_mode="HTML")
