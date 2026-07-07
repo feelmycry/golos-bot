@@ -3,8 +3,8 @@ import aiosqlite
 from config import DB_PATH
 
 PLANS = {
-    "quarter": {"days": 90,  "price": 1100, "label": "3 месяца"},
-    "year":    {"days": 365, "price": 1449, "label": "1 год"},
+    "half_year": {"days": 180, "price": 1390, "label": "6 месяцев"},
+    "year":      {"days": 365, "price": 1790, "label": "12 месяцев"},
 }
 
 

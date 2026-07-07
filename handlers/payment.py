@@ -10,31 +10,31 @@ from services.subscription import grant_subscription, PLANS
 router = Router()
 
 _INVOICES = {
-    "quarter": {
-        "title": "Тренажёр продаж — 3 месяца",
+    "half_year": {
+        "title": "Тренажёр продаж — 6 месяцев",
         "description": (
-            "Полный доступ на 3 месяца: неограниченные тренировки с AI-клиентом, "
+            "Полный доступ на 6 месяцев: неограниченные тренировки с AI-клиентом, "
             "все продукты и сценарии, анализ речи и обратная связь тренера."
         ),
-        "amount": 110000,
-        "label": "3 месяца — 1 100 ₽",
+        "amount": 139000,
+        "label": "6 месяцев — 1 390 ₽",
     },
     "year": {
-        "title": "Тренажёр продаж — 1 год",
+        "title": "Тренажёр продаж — 12 месяцев",
         "description": (
-            "Полный доступ на год: неограниченные тренировки с AI-клиентом, "
+            "Полный доступ на 12 месяцев: неограниченные тренировки с AI-клиентом, "
             "все продукты и сценарии, анализ речи и обратная связь тренера."
         ),
-        "amount": 144900,
-        "label": "1 год — 1 449 ₽",
+        "amount": 179000,
+        "label": "12 месяцев — 1 790 ₽",
     },
 }
 
 
 def _paywall_kb():
     b = InlineKeyboardBuilder()
-    b.button(text="💳 Оплатить 1 100 ₽ / 3 мес", callback_data="pay:quarter")
-    b.button(text="🏆 Оплатить 1 449 ₽ / год", callback_data="pay:year")
+    b.button(text="💳 6 месяцев — 1 390 ₽", callback_data="pay:half_year")
+    b.button(text="🏆 12 месяцев — 1 790 ₽", callback_data="pay:year")
     b.button(text="◀️ Главное меню", callback_data="back_to_menu")
     b.adjust(1)
     return b.as_markup()
@@ -46,8 +46,8 @@ async def show_paywall(message: Message) -> None:
         "Вы провели первый диалог с AI-клиентом — отличный старт! 💪\n\n"
         "Чтобы продолжить тренировки без ограничений, выберите тариф:\n\n"
         "━━━━━━━━━━━━━━━━━━\n"
-        "📅 <b>3 месяца</b> — 1 100 ₽\n"
-        "🏆 <b>Год</b> — 1 449 ₽  <i>(экономия 950 ₽)</i>\n"
+        "📅 <b>6 месяцев</b> — 1 390 ₽\n"
+        "🏆 <b>12 месяцев</b> — 1 790 ₽  <i>(выгоднее)</i>\n"
         "━━━━━━━━━━━━━━━━━━\n\n"
         "Полный доступ включает:\n"
         "✅ Неограниченные тренировки с AI-клиентом\n"
@@ -99,7 +99,7 @@ async def process_successful_payment(message: Message):
     payment_id = message.successful_payment.telegram_payment_charge_id
 
     paid_until = await grant_subscription(message.from_user.id, plan, payment_id)
-    plan_labels = {"quarter": "3 месяца", "year": "1 год"}
+    plan_labels = {"half_year": "6 месяцев", "year": "12 месяцев"}
 
     from handlers.start import _main_kb
     from services.miniapp_auth import create_token
