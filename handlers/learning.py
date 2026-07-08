@@ -203,88 +203,101 @@ async def module_lessons(callback: CallbackQuery):
 
 # ── Lesson content (paginated) ────────────────────────────────────────────────
 
+import logging as _logging
+_log = _logging.getLogger(__name__)
+
 @router.callback_query(F.data.startswith("learn:lesson:"))
 async def show_lesson(callback: CallbackQuery):
-    await callback.answer()
-    parts = callback.data.split(":")
-    # learn:lesson:{lesson_id}:{page}
-    lesson_id = parts[2]
-    page = int(parts[3]) if len(parts) > 3 else 0
-
-    mod, lesson = _get_lesson(lesson_id)
-    if not lesson:
-        await callback.answer("Урок не найден", show_alert=True)
-        return
-
-    # Paywall: m1 lessons 7+ require learning_basic subscription
-    if mod and mod["id"] == "m1" and callback.from_user.id not in ADMIN_IDS:
-        lesson_num = int(lesson_id[3:]) if lesson_id[2:3] == "l" and lesson_id[3:].isdigit() else 0
-        if lesson_num > FREE_LESSONS_M1:
-            if not await is_product_subscribed(callback.from_user.id, "learning_basic"):
-                from handlers.payment import show_learning_paywall
-                await show_learning_paywall(callback)
-                return
-
-    content = _clean_html(lesson["content"])
-    pages = _paginate(content)
-    total_pages = len(pages)
-    page = max(0, min(page, total_pages - 1))
-    page_text = pages[page]
-
-    header = (
-        f"📖 <b>{lesson['title']}</b>\n"
-        f"<i>⏱ {lesson['duration']} мин · ⭐ {lesson['xp']} XP</i>"
-    )
-    if total_pages > 1:
-        header += f" · Стр {page + 1}/{total_pages}"
-
-    text = f"{header}\n\n{page_text}"
-
-    kb = InlineKeyboardBuilder()
-
-    # Pagination
-    nav = []
-    if page > 0:
-        nav.append(InlineKeyboardButton(
-            text="◀️ Назад",
-            callback_data=f"learn:lesson:{lesson_id}:{page - 1}",
-        ))
-    if page < total_pages - 1:
-        nav.append(InlineKeyboardButton(
-            text="Далее ▶️",
-            callback_data=f"learn:lesson:{lesson_id}:{page + 1}",
-        ))
-    if nav:
-        kb.row(*nav)
-
-    # On last page: quiz button or "complete" button
-    if page == total_pages - 1:
-        if lesson.get("quiz"):
-            kb.row(InlineKeyboardButton(
-                text="🧠 Пройти тест",
-                callback_data=f"learn:quiz:{lesson_id}:0",
-            ))
-        else:
-            kb.row(InlineKeyboardButton(
-                text="✅ Отметить как прочитанное",
-                callback_data=f"learn:done:{lesson_id}",
-            ))
-
-    # Back to module
-    mod_id = mod["id"] if mod else "m1"
-    kb.row(InlineKeyboardButton(text="◀️ К урокам", callback_data=f"learn:mod:{mod_id}"))
-
-    # Mark as read when user opens lesson (even on page 0)
-    if page == 0:
-        await mark_lesson_read(callback.from_user.id, lesson_id)
-
     try:
-        await callback.message.edit_text(text, parse_mode="HTML", reply_markup=kb.as_markup())
-    except Exception as e:
-        await callback.message.answer(
-            f"⚠️ Ошибка открытия урока <code>{lesson_id}</code>:\n<code>{e}</code>",
-            parse_mode="HTML",
+        await callback.answer()
+        parts = callback.data.split(":")
+        # learn:lesson:{lesson_id}:{page}
+        lesson_id = parts[2]
+        page = int(parts[3]) if len(parts) > 3 else 0
+
+        _log.info("show_lesson: user=%s lesson=%s page=%s", callback.from_user.id, lesson_id, page)
+
+        mod, lesson = _get_lesson(lesson_id)
+        if not lesson:
+            _log.warning("show_lesson: lesson %s not found", lesson_id)
+            await callback.message.answer(f"⚠️ Урок <code>{lesson_id}</code> не найден в курсе.", parse_mode="HTML")
+            return
+
+        # Paywall: m1 lessons 7+ require learning_basic subscription
+        if mod and mod["id"] == "m1" and callback.from_user.id not in ADMIN_IDS:
+            lesson_num = int(lesson_id[3:]) if lesson_id[2:3] == "l" and lesson_id[3:].isdigit() else 0
+            if lesson_num > FREE_LESSONS_M1:
+                if not await is_product_subscribed(callback.from_user.id, "learning_basic"):
+                    from handlers.payment import show_learning_paywall
+                    await show_learning_paywall(callback)
+                    return
+
+        content = _clean_html(lesson["content"])
+        pages = _paginate(content)
+        total_pages = len(pages)
+        page = max(0, min(page, total_pages - 1))
+        page_text = pages[page]
+
+        _log.info("show_lesson: %s pages, page %s, content_len=%s", total_pages, page, len(content))
+
+        header = (
+            f"📖 <b>{lesson['title']}</b>\n"
+            f"<i>⏱ {lesson['duration']} мин · ⭐ {lesson['xp']} XP</i>"
         )
+        if total_pages > 1:
+            header += f" · Стр {page + 1}/{total_pages}"
+
+        text = f"{header}\n\n{page_text}"
+
+        kb = InlineKeyboardBuilder()
+
+        # Pagination
+        nav = []
+        if page > 0:
+            nav.append(InlineKeyboardButton(
+                text="◀️ Назад",
+                callback_data=f"learn:lesson:{lesson_id}:{page - 1}",
+            ))
+        if page < total_pages - 1:
+            nav.append(InlineKeyboardButton(
+                text="Далее ▶️",
+                callback_data=f"learn:lesson:{lesson_id}:{page + 1}",
+            ))
+        if nav:
+            kb.row(*nav)
+
+        # On last page: quiz button or "complete" button
+        if page == total_pages - 1:
+            if lesson.get("quiz"):
+                kb.row(InlineKeyboardButton(
+                    text="🧠 Пройти тест",
+                    callback_data=f"learn:quiz:{lesson_id}:0",
+                ))
+            else:
+                kb.row(InlineKeyboardButton(
+                    text="✅ Отметить как прочитанное",
+                    callback_data=f"learn:done:{lesson_id}",
+                ))
+
+        # Back to module
+        mod_id = mod["id"] if mod else "m1"
+        kb.row(InlineKeyboardButton(text="◀️ К урокам", callback_data=f"learn:mod:{mod_id}"))
+
+        # Mark as read when user opens lesson (even on page 0)
+        if page == 0:
+            await mark_lesson_read(callback.from_user.id, lesson_id)
+
+        await callback.message.edit_text(text, parse_mode="HTML", reply_markup=kb.as_markup())
+
+    except Exception as e:
+        _log.exception("show_lesson FAILED for %s", callback.data)
+        try:
+            await callback.message.answer(
+                f"⚠️ Ошибка открытия урока:\n<code>{type(e).__name__}: {e}</code>",
+                parse_mode="HTML",
+            )
+        except Exception:
+            pass
 
 
 @router.callback_query(F.data.startswith("learn:done:"))
