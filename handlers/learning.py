@@ -1,5 +1,6 @@
 import html as _html
 import json
+import random
 import re
 from html.parser import HTMLParser
 from pathlib import Path
@@ -379,21 +380,27 @@ async def show_quiz_question(callback: CallbackQuery, state: FSMContext):
 
     q = quiz[q_idx]
     total = len(quiz)
-    options = ["А", "Б", "В", "Г", "Д", "Е", "Ж", "З"]
+    labels = ["А", "Б", "В", "Г", "Д", "Е", "Ж", "З"]
+
+    # Shuffle answer options; store mapping so handle_answer can check correctness
+    n = len(q["options"])
+    shuffle_map = list(range(n))
+    random.shuffle(shuffle_map)
+    # shuffle_map[display_pos] = original_index
 
     text = (
         f"🧠 <b>Тест: {lesson['title']}</b>\n"
         f"<i>Вопрос {q_idx + 1} из {total}</i>\n\n"
         f"<b>{q['q']}</b>\n\n"
     )
-    for i, opt in enumerate(q["options"]):
-        text += f"{options[i]}) {opt}\n"
+    for display_pos in range(n):
+        text += f"{labels[display_pos]}) {q['options'][shuffle_map[display_pos]]}\n"
 
     kb = InlineKeyboardBuilder()
-    for i in range(len(q["options"])):
+    for display_pos in range(n):
         kb.button(
-            text=options[i],
-            callback_data=f"learn:ans:{lesson_id}:{q_idx}:{i}",
+            text=labels[display_pos],
+            callback_data=f"learn:ans:{lesson_id}:{q_idx}:{display_pos}",
         )
     kb.adjust(2)
     kb.row(InlineKeyboardButton(
@@ -403,9 +410,9 @@ async def show_quiz_question(callback: CallbackQuery, state: FSMContext):
 
     await state.set_state(LearningState.taking_quiz)
     if q_idx == 0:
-        await state.update_data(lesson_id=lesson_id, q_idx=q_idx, score=0)
+        await state.update_data(lesson_id=lesson_id, q_idx=q_idx, score=0, shuffle_map=shuffle_map)
     else:
-        await state.update_data(lesson_id=lesson_id, q_idx=q_idx)
+        await state.update_data(lesson_id=lesson_id, q_idx=q_idx, shuffle_map=shuffle_map)
 
     await callback.message.edit_text(text, parse_mode="HTML", reply_markup=kb.as_markup())
 
@@ -424,21 +431,25 @@ async def handle_answer(callback: CallbackQuery, state: FSMContext):
 
     quiz = lesson["quiz"]
     q = quiz[q_idx]
-    correct = q["correct"]
-    options = ["А", "Б", "В", "Г", "Д", "Е", "Ж", "З"]
+    correct = q["correct"]  # original index of correct answer
+    labels = ["А", "Б", "В", "Г", "Д", "Е", "Ж", "З"]
 
-    # Get current score from state
+    # Restore shuffle map from FSM to check answer correctly
     fsm = await state.get_data()
     score = fsm.get("score", 0)
+    shuffle_map = fsm.get("shuffle_map", list(range(len(q["options"]))))
 
-    is_correct = chosen == correct
+    # chosen is display position; map to original index
+    original_chosen = shuffle_map[chosen] if chosen < len(shuffle_map) else chosen
+    is_correct = original_chosen == correct
     if is_correct:
         score += 1
     await state.update_data(score=score)
 
-    # Show result for this question
+    # Which display label is the correct answer
+    correct_display = shuffle_map.index(correct) if correct in shuffle_map else correct
     result_icon = "✅" if is_correct else "❌"
-    answer_label = options[correct] if correct < len(options) else str(correct)
+    answer_label = labels[correct_display] if correct_display < len(labels) else str(correct_display)
     expl = q.get("explanation", "")
 
     text = (
