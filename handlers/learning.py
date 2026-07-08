@@ -1,5 +1,7 @@
+import html as _html
 import json
 import re
+from html.parser import HTMLParser
 from pathlib import Path
 
 from aiogram import F, Router
@@ -55,14 +57,55 @@ def _all_lessons_for_module(mod_id: str) -> list[dict]:
 _PAGE_SIZE = 3500  # Telegram HTML limit is 4096; leave room for navigation
 
 
+_ALLOWED_TAGS = {"b", "i", "u", "s", "code", "pre"}
+
+
+class _TgHTMLCleaner(HTMLParser):
+    """Parses arbitrary HTML and emits only Telegram-safe markup."""
+
+    def __init__(self):
+        super().__init__(convert_charrefs=False)
+        self._out: list[str] = []
+        self._stack: list[str] = []
+
+    def handle_starttag(self, tag, attrs):
+        tag = tag.lower()
+        if tag in _ALLOWED_TAGS:
+            self._out.append(f"<{tag}>")
+            self._stack.append(tag)
+
+    def handle_endtag(self, tag):
+        tag = tag.lower()
+        if tag in _ALLOWED_TAGS and tag in self._stack:
+            # Close everything on the stack up to this tag
+            while self._stack and self._stack[-1] != tag:
+                self._out.append(f"</{self._stack.pop()}>")
+            if self._stack:
+                self._stack.pop()
+                self._out.append(f"</{tag}>")
+
+    def handle_data(self, data):
+        self._out.append(_html.escape(data, quote=False))
+
+    def handle_entityref(self, name):
+        self._out.append(f"&{name};")
+
+    def handle_charref(self, name):
+        self._out.append(f"&#{name};")
+
+    def result(self) -> str:
+        # Close any unclosed tags
+        while self._stack:
+            self._out.append(f"</{self._stack.pop()}>")
+        return "".join(self._out)
+
+
 def _clean_html(text: str) -> str:
-    """Keep only safe Telegram HTML tags, strip the rest."""
-    # First: escape < that don't start an HTML tag (e.g. "P/S<1", "FCF<0", "β<1")
-    text = re.sub(r"<(?![a-zA-Z/!])", "&lt;", text)
-    # Then: remove disallowed HTML tags
-    text = re.sub(r"<(?!/?(b|i|u|s|code|pre|a)[\s>])[^>]+>", "", text)
-    text = re.sub(r"\n{3,}", "\n\n", text)
-    return text.strip()
+    cleaner = _TgHTMLCleaner()
+    cleaner.feed(text)
+    out = cleaner.result()
+    out = re.sub(r"\n{3,}", "\n\n", out)
+    return out.strip()
 
 
 def _paginate(text: str) -> list[str]:
@@ -241,7 +284,7 @@ async def show_lesson(callback: CallbackQuery):
         _log.info("show_lesson: %s pages, page %s, content_len=%s", total_pages, page, len(content))
 
         header = (
-            f"📖 <b>{lesson['title']}</b>\n"
+            f"📖 <b>{_html.escape(lesson['title'])}</b>\n"
             f"<i>⏱ {lesson['duration']} мин · ⭐ {lesson['xp']} XP</i>"
         )
         if total_pages > 1:
