@@ -1,3 +1,5 @@
+import re
+
 from anthropic import AsyncAnthropic
 from config import ANTHROPIC_API_KEY
 from prompts.templates import (
@@ -10,6 +12,13 @@ from prompts.templates import (
 )
 
 _client: AsyncAnthropic | None = None
+
+
+def _strip_markdown(text: str) -> str:
+    text = re.sub(r'\*\*(.+?)\*\*', r'\1', text, flags=re.DOTALL)
+    text = re.sub(r'\*([^\s*][^*\n]*?)\*', r'\1', text)
+    text = re.sub(r'^#{1,6}\s+', '', text, flags=re.MULTILINE)
+    return text
 
 
 def _get_client() -> AsyncAnthropic:
@@ -92,7 +101,7 @@ async def get_feedback(
         max_tokens=500,
         messages=[{"role": "user", "content": prompt}],
     )
-    return response.content[0].text.strip()
+    return _strip_markdown(response.content[0].text.strip())
 
 
 async def get_hint(
@@ -108,7 +117,7 @@ async def get_hint(
         max_tokens=500,
         messages=[{"role": "user", "content": prompt}],
     )
-    return response.content[0].text.strip()
+    return _strip_markdown(response.content[0].text.strip())
 
 
 async def get_mid_feedback(
@@ -125,7 +134,7 @@ async def get_mid_feedback(
         max_tokens=700,
         messages=[{"role": "user", "content": prompt}],
     )
-    return response.content[0].text.strip()
+    return _strip_markdown(response.content[0].text.strip())
 
 
 async def get_session_summary(
@@ -142,7 +151,7 @@ async def get_session_summary(
         max_tokens=800,
         messages=[{"role": "user", "content": prompt}],
     )
-    return response.content[0].text.strip()
+    return _strip_markdown(response.content[0].text.strip())
 
 
 async def analyze_news_impact(news_text: str, product_id: str) -> str:
