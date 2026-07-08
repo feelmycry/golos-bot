@@ -252,7 +252,7 @@ _log = _logging.getLogger(__name__)
 @router.callback_query(F.data.startswith("learn:lesson:"))
 async def show_lesson(callback: CallbackQuery):
     try:
-        await callback.answer("✅ ВЕРСИЯ 3 — Railway обновился!", show_alert=True)
+        await callback.answer()
         parts = callback.data.split(":")
         # learn:lesson:{lesson_id}:{page}
         lesson_id = parts[2]
@@ -330,8 +330,12 @@ async def show_lesson(callback: CallbackQuery):
         if page == 0:
             await mark_lesson_read(callback.from_user.id, lesson_id)
 
-        plain = re.sub(r"<[^>]+>", "", text).replace("&lt;", "<").replace("&gt;", ">").replace("&amp;", "&")
-        await callback.message.answer(plain, reply_markup=kb.as_markup())
+        try:
+            await callback.message.edit_text(text, parse_mode="HTML", reply_markup=kb.as_markup())
+        except Exception as html_err:
+            _log.warning("HTML parse failed for %s: %s — sending plain text", lesson_id, html_err)
+            plain = re.sub(r"<[^>]+>", "", text).replace("&lt;", "<").replace("&gt;", ">").replace("&amp;", "&")
+            await callback.message.edit_text(plain, reply_markup=kb.as_markup())
 
     except Exception as e:
         _log.exception("show_lesson FAILED for %s", callback.data)
