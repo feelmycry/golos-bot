@@ -252,7 +252,7 @@ _log = _logging.getLogger(__name__)
 @router.callback_query(F.data.startswith("learn:lesson:"))
 async def show_lesson(callback: CallbackQuery):
     try:
-        await callback.answer()
+        await callback.answer("⏳ Загружаю урок...", show_alert=False)
         parts = callback.data.split(":")
         # learn:lesson:{lesson_id}:{page}
         lesson_id = parts[2]
