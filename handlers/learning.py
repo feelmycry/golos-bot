@@ -57,6 +57,9 @@ _PAGE_SIZE = 3500  # Telegram HTML limit is 4096; leave room for navigation
 
 def _clean_html(text: str) -> str:
     """Keep only safe Telegram HTML tags, strip the rest."""
+    # First: escape < that don't start an HTML tag (e.g. "P/S<1", "FCF<0", "β<1")
+    text = re.sub(r"<(?![a-zA-Z/!])", "&lt;", text)
+    # Then: remove disallowed HTML tags
     text = re.sub(r"<(?!/?(b|i|u|s|code|pre|a)[\s>])[^>]+>", "", text)
     text = re.sub(r"\n{3,}", "\n\n", text)
     return text.strip()
