@@ -278,7 +278,13 @@ async def show_lesson(callback: CallbackQuery):
     if page == 0:
         await mark_lesson_read(callback.from_user.id, lesson_id)
 
-    await callback.message.edit_text(text, parse_mode="HTML", reply_markup=kb.as_markup())
+    try:
+        await callback.message.edit_text(text, parse_mode="HTML", reply_markup=kb.as_markup())
+    except Exception as e:
+        await callback.message.answer(
+            f"⚠️ Ошибка открытия урока <code>{lesson_id}</code>:\n<code>{e}</code>",
+            parse_mode="HTML",
+        )
 
 
 @router.callback_query(F.data.startswith("learn:done:"))
