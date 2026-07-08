@@ -330,15 +330,18 @@ async def show_lesson(callback: CallbackQuery):
         if page == 0:
             await mark_lesson_read(callback.from_user.id, lesson_id)
 
-        await callback.message.edit_text(text, parse_mode="HTML", reply_markup=kb.as_markup())
+        try:
+            await callback.message.edit_text(text, parse_mode="HTML", reply_markup=kb.as_markup())
+        except Exception as html_err:
+            _log.exception("HTML parse failed for %s, trying plain text", lesson_id)
+            # Fallback: strip all tags and send as plain text
+            plain = re.sub(r"<[^>]+>", "", text).replace("&lt;", "<").replace("&gt;", ">").replace("&amp;", "&")
+            await callback.message.edit_text(plain, reply_markup=kb.as_markup())
 
     except Exception as e:
         _log.exception("show_lesson FAILED for %s", callback.data)
         try:
-            await callback.message.answer(
-                f"⚠️ Ошибка открытия урока:\n<code>{type(e).__name__}: {e}</code>",
-                parse_mode="HTML",
-            )
+            await callback.message.answer(f"⚠️ Ошибка: {type(e).__name__}: {e}")
         except Exception:
             pass
 
