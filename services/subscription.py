@@ -8,8 +8,10 @@ PLANS = {
 }
 
 PRODUCT_PLANS = {
-    "learning_basic": {"days": 36500, "price": 200,  "label": "Базовый уровень (навсегда)"},
-    "stocks_monthly": {"days": 30,    "price": 1400, "label": "Анализ акций — 1 месяц"},
+    "learning_basic":  {"days": 36500, "price": 200,  "label": "Базовый уровень (навсегда)"},
+    "learning_medium": {"days": 36500, "price": 200,  "label": "Средний уровень (навсегда)"},
+    "learning_pro":    {"days": 36500, "price": 200,  "label": "Профессиональный уровень (навсегда)"},
+    "stocks_monthly":  {"days": 30,    "price": 1400, "label": "Анализ акций — 1 месяц"},
 }
 
 

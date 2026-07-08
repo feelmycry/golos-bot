@@ -145,8 +145,8 @@ _MOD_LABELS = {
     "m3": ("🏆", "Профессиональный уровень"),
 }
 
-# Modules locked for regular users (will become paid later)
-_LOCKED_MODS = {"m2", "m3"}
+# Product key per paid module
+_MOD_PRODUCT = {"m2": "learning_medium", "m3": "learning_pro"}
 
 # ── Menu: 3 modules ───────────────────────────────────────────────────────────
 
@@ -159,20 +159,22 @@ async def learning_menu(callback: CallbackQuery):
     is_admin = callback.from_user.id in ADMIN_IDS
     for mod in course["modules"]:
         icon, label = _MOD_LABELS.get(mod["id"], ("📚", mod["level"]))
-        if mod["id"] in _LOCKED_MODS:
-            if is_admin:
+        product = _MOD_PRODUCT.get(mod["id"])
+        if product and not is_admin:
+            has_access = await is_product_subscribed(callback.from_user.id, product)
+            if has_access:
                 kb.row(InlineKeyboardButton(
-                    text=f"{icon} {label} 👁",
+                    text=f"{icon} {label}",
                     callback_data=f"learn:mod:{mod['id']}",
                 ))
             else:
                 kb.row(InlineKeyboardButton(
-                    text=f"🔒 {label} — скоро",
-                    callback_data=f"learn:locked:{mod['id']}",
+                    text=f"🔒 {label} — 200 ₽",
+                    callback_data=f"learn:mod:{mod['id']}",
                 ))
         else:
             kb.row(InlineKeyboardButton(
-                text=f"{icon} {label}",
+                text=f"{icon} {label}" + (" 👁" if is_admin and product else ""),
                 callback_data=f"learn:mod:{mod['id']}",
             ))
     kb.row(InlineKeyboardButton(text="◀️ Главное меню", callback_data="back_to_menu"))
@@ -186,26 +188,25 @@ async def learning_menu(callback: CallbackQuery):
     )
 
 
-# ── Locked module stub ───────────────────────────────────────────────────────
-
-@router.callback_query(F.data.startswith("learn:locked:"))
-async def locked_module(callback: CallbackQuery):
-    mod_id = callback.data[len("learn:locked:"):]
-    _, label = _MOD_LABELS.get(mod_id, ("", "этот уровень"))
-    await callback.answer(
-        f"🔒 {label} пока недоступен.\nСкоро здесь появится платный доступ.",
-        show_alert=True,
-    )
-
-
 # ── Lesson list for a module ──────────────────────────────────────────────────
 
 @router.callback_query(F.data.startswith("learn:mod:"))
 async def module_lessons(callback: CallbackQuery):
     mod_id = callback.data[len("learn:mod:"):]
-    if mod_id in _LOCKED_MODS and callback.from_user.id not in ADMIN_IDS:
-        await callback.answer("🔒 Этот уровень пока недоступен.", show_alert=True)
-        return
+    is_admin = callback.from_user.id in ADMIN_IDS
+
+    # Paywall for m2 / m3
+    product = _MOD_PRODUCT.get(mod_id)
+    if product and not is_admin:
+        has_access = await is_product_subscribed(callback.from_user.id, product)
+        if not has_access:
+            from handlers.payment import show_learning_medium_paywall, show_learning_pro_paywall
+            if mod_id == "m2":
+                await show_learning_medium_paywall(callback)
+            else:
+                await show_learning_pro_paywall(callback)
+            return
+
     await callback.answer()
     mod = _get_module(mod_id)
     if not mod:
@@ -267,14 +268,27 @@ async def show_lesson(callback: CallbackQuery):
             await callback.message.answer(f"⚠️ Урок <code>{lesson_id}</code> не найден в курсе.", parse_mode="HTML")
             return
 
+        is_admin = callback.from_user.id in ADMIN_IDS
+
         # Paywall: m1 lessons 7+ require learning_basic subscription
-        if mod and mod["id"] == "m1" and callback.from_user.id not in ADMIN_IDS:
+        if mod and mod["id"] == "m1" and not is_admin:
             lesson_num = int(lesson_id[3:]) if lesson_id[2:3] == "l" and lesson_id[3:].isdigit() else 0
             if lesson_num > FREE_LESSONS_M1:
                 if not await is_product_subscribed(callback.from_user.id, "learning_basic"):
                     from handlers.payment import show_learning_paywall
                     await show_learning_paywall(callback)
                     return
+
+        # Paywall: m2 / m3 require separate product subscription
+        if mod and not is_admin:
+            product = _MOD_PRODUCT.get(mod["id"])
+            if product and not await is_product_subscribed(callback.from_user.id, product):
+                from handlers.payment import show_learning_medium_paywall, show_learning_pro_paywall
+                if mod["id"] == "m2":
+                    await show_learning_medium_paywall(callback)
+                else:
+                    await show_learning_pro_paywall(callback)
+                return
 
         content = _clean_html(lesson["content"])
         pages = _paginate(content)

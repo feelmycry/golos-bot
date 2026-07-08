@@ -17,6 +17,20 @@ _PRODUCT_INVOICES = {
         "label": "Базовый уровень — 200 ₽",
         "product": "learning_basic",
     },
+    "learning_medium": {
+        "title": "Обучение — Средний уровень",
+        "description": "Полный доступ ко всем 18 урокам среднего уровня: фундаментальный анализ, мультипликаторы, отчётность, тесты, XP.",
+        "amount": 20000,
+        "label": "Средний уровень — 200 ₽",
+        "product": "learning_medium",
+    },
+    "learning_pro": {
+        "title": "Обучение — Профессиональный уровень",
+        "description": "Полный доступ ко всем 20 урокам профессионального уровня: DCF, деривативы, M&A, VaR, тесты, XP.",
+        "amount": 20000,
+        "label": "Профессиональный уровень — 200 ₽",
+        "product": "learning_pro",
+    },
     "stocks_monthly": {
         "title": "Анализ акций — 1 месяц",
         "description": "Полный доступ к анализу акций на 1 месяц: мультипликаторы, дивиденды, AI анализ, отчётность.",
@@ -88,6 +102,46 @@ async def show_learning_paywall(callback: CallbackQuery) -> None:
         "━━━━━━━━━━━━━━━━━━\n\n"
         "Включает:\n"
         "✅ Уроки 7–17 базового уровня\n"
+        "✅ Тесты с разбором ошибок\n"
+        "✅ XP и прогресс"
+    )
+    await callback.answer()
+    await callback.message.edit_text(text, parse_mode="HTML", reply_markup=b.as_markup())
+
+
+async def show_learning_medium_paywall(callback: CallbackQuery) -> None:
+    b = InlineKeyboardBuilder()
+    b.button(text="💳 Открыть доступ — 200 ₽", callback_data="pay_prod:learning_medium")
+    b.button(text="◀️ Назад к уровням", callback_data="learning:menu")
+    b.adjust(1)
+    text = (
+        "🔒 <b>Средний уровень — платный доступ</b>\n\n"
+        "18 уроков по фундаментальному анализу, мультипликаторам, финансовой отчётности и портфельным стратегиям.\n\n"
+        "━━━━━━━━━━━━━━━━━━\n"
+        "📊 <b>Средний уровень</b> — 200 ₽  <i>(навсегда)</i>\n"
+        "━━━━━━━━━━━━━━━━━━\n\n"
+        "Включает:\n"
+        "✅ 18 уроков среднего уровня\n"
+        "✅ Тесты с разбором ошибок\n"
+        "✅ XP и прогресс"
+    )
+    await callback.answer()
+    await callback.message.edit_text(text, parse_mode="HTML", reply_markup=b.as_markup())
+
+
+async def show_learning_pro_paywall(callback: CallbackQuery) -> None:
+    b = InlineKeyboardBuilder()
+    b.button(text="💳 Открыть доступ — 200 ₽", callback_data="pay_prod:learning_pro")
+    b.button(text="◀️ Назад к уровням", callback_data="learning:menu")
+    b.adjust(1)
+    text = (
+        "🔒 <b>Профессиональный уровень — платный доступ</b>\n\n"
+        "20 уроков по DCF-моделям, деривативам, M&amp;A, управлению рисками и работе с HNWI-клиентами.\n\n"
+        "━━━━━━━━━━━━━━━━━━\n"
+        "🏆 <b>Профессиональный уровень</b> — 200 ₽  <i>(навсегда)</i>\n"
+        "━━━━━━━━━━━━━━━━━━\n\n"
+        "Включает:\n"
+        "✅ 20 уроков профессионального уровня\n"
         "✅ Тесты с разбором ошибок\n"
         "✅ XP и прогресс"
     )
@@ -191,10 +245,20 @@ async def process_successful_payment(message: Message):
     token = create_token(message.from_user.id)
 
     if kind == "prod":
-        product_map = {"learning_basic": "learning_basic", "stocks_monthly": "stocks"}
+        product_map = {
+            "learning_basic": "learning_basic",
+            "learning_medium": "learning_medium",
+            "learning_pro": "learning_pro",
+            "stocks_monthly": "stocks",
+        }
         product = product_map.get(plan, plan)
         paid_until = await grant_product_access(message.from_user.id, product, plan, payment_id)
-        prod_labels = {"learning_basic": "Базовый уровень обучения", "stocks_monthly": "Анализ акций (1 мес)"}
+        prod_labels = {
+            "learning_basic": "Базовый уровень обучения",
+            "learning_medium": "Средний уровень обучения",
+            "learning_pro": "Профессиональный уровень обучения",
+            "stocks_monthly": "Анализ акций (1 мес)",
+        }
         await message.answer(
             f"🎉 <b>Оплата прошла успешно!</b>\n\n"
             f"Доступ: <b>{prod_labels.get(plan, plan)}</b>\n"
