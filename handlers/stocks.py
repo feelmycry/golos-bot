@@ -1,4 +1,5 @@
 import asyncio
+import re
 
 from aiogram import F, Router
 from aiogram.fsm.context import FSMContext
@@ -204,9 +205,15 @@ async def stock_multipliers(callback: CallbackQuery):
 
     if mult:
         labels = {
-            "p_e": "P/E", "p_s": "P/S", "ev_ebitda": "EV/EBITDA",
-            "p_bv": "P/BV", "roe": "ROE (%)", "debt_ebitda": "Долг/EBITDA",
-            "div_yield": "Дивиденды (%)",
+            "p_e":          "P/E",
+            "p_s":          "P/S",
+            "ev_ebitda":    "EV/EBITDA",
+            "p_bv":         "P/BV",
+            "roe":          "ROE (%)",
+            "roa":          "ROA (%)",
+            "debt_ebitda":  "Долг/EBITDA",
+            "div_yield":    "Дивиденды (%)",
+            "market_cap_bln": "Капитализация (млрд ₽)",
         }
         for key, label in labels.items():
             if mult.get(key):
@@ -345,104 +352,40 @@ async def stock_reports(callback: CallbackQuery):
         return
     ticker = callback.data[len("stock:reports:"):]
     await callback.answer()
-    await callback.message.edit_text(f"📄 Ищу отчётность {ticker} на e-disclosure.ru...")
 
-    # Try to get company name from MOEX ISS for better e-disclosure search
+    # Get company name from MOEX
     results = await moex.search_securities(ticker)
     company_name = ticker
     for r in results:
         if r.get("secid") == ticker:
-            company_name = r.get("name") or r.get("shortname") or ticker
+            company_name = r.get("shortname") or r.get("name") or ticker
             break
 
-    reports_data = await edisclosure.get_all_reports(company_name)
-
-    if not reports_data:
-        # Fallback: try with ticker directly
-        reports_data = await edisclosure.get_all_reports(ticker)
-
-    if not reports_data or (
-        not reports_data.get("msfo_annual") and
-        not reports_data.get("rsbu_annual") and
-        not reports_data.get("msfo_semi")
-    ):
-        kb = InlineKeyboardBuilder()
-        kb.row(InlineKeyboardButton(
-            text="🌐 Открыть e-disclosure.ru",
-            url=f"https://www.e-disclosure.ru/poisk-po-soobshheniyam?query={company_name}&eventType=55"
-        ))
-        kb.row(InlineKeyboardButton(text="◀️ К компании", callback_data=f"stock:company:{ticker}"))
-        await callback.message.edit_text(
-            f"📄 <b>Отчётность {ticker}</b>\n\n"
-            "⚠️ Не удалось найти документы автоматически.\n"
-            "Откройте e-disclosure.ru для поиска вручную.",
-            parse_mode="HTML",
-            reply_markup=kb.as_markup(),
-        )
-        return
-
-    lines = [f"📄 <b>Финансовая отчётность {ticker}</b>\n"]
+    # e-disclosure.ru blocks server-side requests (403), so provide direct links
     kb = InlineKeyboardBuilder()
-
-    if reports_data.get("msfo_annual"):
-        lines.append("📊 <b>МСФО (годовая):</b>")
-        for i, rep in enumerate(reports_data["msfo_annual"][:3]):
-            title = rep["title"][:60]
-            date = rep["date"]
-            label = f"📎 {date} {title}" if date else f"📎 {title}"
-            lines.append(f"  • {label}")
-            # Add download + AI analysis buttons for each report
-            kb.row(
-                InlineKeyboardButton(
-                    text=f"📥 Скачать МСФО {i+1}",
-                    callback_data=f"stock:pdf_dl:{ticker}:{i}:msfo_annual",
-                ),
-                InlineKeyboardButton(
-                    text=f"🤖 AI анализ {i+1}",
-                    callback_data=f"stock:pdf_ai:{ticker}:{i}:msfo_annual",
-                ),
-            )
-
-    if reports_data.get("msfo_semi"):
-        lines.append("\n📊 <b>МСФО (полугодовая):</b>")
-        for i, rep in enumerate(reports_data["msfo_semi"][:2]):
-            title = rep["title"][:60]
-            date = rep["date"]
-            label = f"📎 {date} {title}" if date else f"📎 {title}"
-            lines.append(f"  • {label}")
-            kb.row(
-                InlineKeyboardButton(
-                    text=f"📥 Скачать {i+1}",
-                    callback_data=f"stock:pdf_dl:{ticker}:{i}:msfo_semi",
-                ),
-                InlineKeyboardButton(
-                    text=f"🤖 AI анализ {i+1}",
-                    callback_data=f"stock:pdf_ai:{ticker}:{i}:msfo_semi",
-                ),
-            )
-
-    if reports_data.get("rsbu_annual"):
-        lines.append("\n📋 <b>РСБУ (годовая):</b>")
-        for i, rep in enumerate(reports_data["rsbu_annual"][:2]):
-            title = rep["title"][:60]
-            date = rep["date"]
-            label = f"📎 {date} {title}" if date else f"📎 {title}"
-            lines.append(f"  • {label}")
-            kb.row(InlineKeyboardButton(
-                text=f"🤖 AI анализ РСБУ {i+1}",
-                callback_data=f"stock:pdf_ai:{ticker}:{i}:rsbu_annual",
-            ))
-
-    # Store reports in FSM for later use
-    # We'll use callback data to store the index and type, and re-fetch when needed
+    kb.row(InlineKeyboardButton(
+        text="📋 e-disclosure.ru (МСФО / РСБУ)",
+        url=f"https://www.e-disclosure.ru/poisk-po-soobshheniyam?query={company_name}&eventType=55",
+    ))
+    kb.row(InlineKeyboardButton(
+        text="📊 Smart-Lab — финансы по годам",
+        url=f"https://smart-lab.ru/q/{ticker}/f/y/",
+    ))
+    kb.row(InlineKeyboardButton(
+        text="🏛 MOEX — страница эмитента",
+        url=f"https://www.moex.com/ru/issue.aspx?board=TQBR&code={ticker}",
+    ))
     kb.row(InlineKeyboardButton(text="◀️ К компании", callback_data=f"stock:company:{ticker}"))
 
-    # Store reports data in a temp way via ticker-based memory
-    _report_cache[ticker] = reports_data
-
-    await callback.message.edit_text(
-        "\n".join(lines), parse_mode="HTML", reply_markup=kb.as_markup()
+    text = (
+        f"📄 <b>Отчётность {company_name} ({ticker})</b>\n\n"
+        "Финансовые отчёты (МСФО, РСБУ) доступны на официальных платформах:\n\n"
+        "• <b>e-disclosure.ru</b> — обязательное раскрытие по закону, годовые и полугодовые отчёты\n"
+        "• <b>Smart-Lab</b> — выручка, EBITDA, прибыль по годам\n"
+        "• <b>MOEX</b> — страница эмитента с последними новостями\n\n"
+        "<i>Нажмите кнопку для перехода на источник</i>"
     )
+    await callback.message.edit_text(text, parse_mode="HTML", reply_markup=kb.as_markup())
 
 
 # Simple in-memory cache for reports (cleared on restart)
@@ -606,6 +549,13 @@ async def stock_ai_analysis(callback: CallbackQuery):
     if len(full) > 4096:
         full = full[:4090] + "..."
 
-    await callback.message.edit_text(
-        full, parse_mode="HTML", reply_markup=_back_kb(ticker).as_markup()
-    )
+    try:
+        await callback.message.edit_text(
+            full, parse_mode="HTML", reply_markup=_back_kb(ticker).as_markup()
+        )
+    except Exception:
+        # Claude may return unsupported HTML tags — strip all and send plain
+        plain = re.sub(r"<[^>]+>", "", full)
+        await callback.message.edit_text(
+            plain, reply_markup=_back_kb(ticker).as_markup()
+        )

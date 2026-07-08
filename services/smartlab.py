@@ -11,15 +11,18 @@ _HEADERS = {
 }
 _TIMEOUT = aiohttp.ClientTimeout(total=20)
 
-_MULT_COLS = {
-    "P/E": "p_e",
-    "P/S": "p_s",
-    "EV/EBITDA": "ev_ebitda",
-    "P/BV": "p_bv",
-    "ROE": "roe",
-    "Долг/EBITDA": "debt_ebitda",
-    "Дивиденды": "div_yield",
-}
+# (lowercase substring in header → our key); order matters — more specific first
+_COL_PATTERNS = [
+    ("ev/ebitda", "ev_ebitda"),
+    ("долг/ebitda", "debt_ebitda"),
+    ("p/e",  "p_e"),
+    ("p/s",  "p_s"),
+    ("p/b",  "p_bv"),
+    ("roe",  "roe"),
+    ("roa",  "roa"),
+    ("дд ао", "div_yield"),
+    ("капит", "market_cap_bln"),
+]
 
 _FIN_ROWS_MAP = {
     "выручка": "revenue",
@@ -41,8 +44,9 @@ def _clean(s: str) -> str | None:
 
 async def get_multipliers(ticker: str) -> dict | None:
     """
-    Parse current multipliers from Smart-Lab fundamentals summary table.
-    This table is server-rendered and Google-indexed, so it's parseable.
+    Parse current multipliers from Smart-Lab fundamentals summary page.
+    Handles both non-financial (Table 0, has EV/EBITDA) and financial/bank
+    (Table 1, has RoE/RoA) sectors by searching all tables for the ticker row.
     """
     url = "https://smart-lab.ru/q/shares_fundamental/"
     try:
@@ -57,49 +61,45 @@ async def get_multipliers(ticker: str) -> dict | None:
     soup = BeautifulSoup(html, "html.parser")
     ticker_upper = ticker.upper()
 
-    # Find the main table with fundamentals
-    table = None
-    for t in soup.find_all("table"):
-        txt = t.get_text()
-        if "P/E" in txt and "EV/EBITDA" in txt:
-            table = t
-            break
-    if not table:
-        return None
-
-    rows = table.find_all("tr")
-    if len(rows) < 2:
-        return None
-
-    # Extract column headers
-    header_row = rows[0]
-    headers = [th.get_text(strip=True) for th in header_row.find_all(["th", "td"])]
-
-    # Find column indices
-    col_indices: dict[str, int] = {}
-    for i, h in enumerate(headers):
-        for col_label, key in _MULT_COLS.items():
-            if col_label in h:
-                col_indices[key] = i
-
-    # Find the row for this ticker
-    ticker_col = next((i for i, h in enumerate(headers) if "тикер" in h.lower() or "код" in h.lower()), 0)
-
-    for row in rows[1:]:
-        cells = row.find_all(["td", "th"])
-        if not cells:
-            continue
-        row_ticker = cells[ticker_col].get_text(strip=True).upper() if ticker_col < len(cells) else ""
-        if row_ticker != ticker_upper:
+    for table in soup.find_all("table"):
+        rows = table.find_all("tr")
+        if len(rows) < 2:
             continue
 
-        result: dict = {}
-        for key, col_idx in col_indices.items():
-            if col_idx < len(cells):
-                val = _clean(cells[col_idx].get_text(strip=True))
-                if val:
-                    result[key] = val
-        return result if result else None
+        header_cells = rows[0].find_all(["th", "td"])
+        headers_lower = [c.get_text(strip=True).lower() for c in header_cells]
+
+        # Must have a "тикер" column
+        ticker_col = next((i for i, h in enumerate(headers_lower) if "тикер" in h), None)
+        if ticker_col is None:
+            continue
+
+        # Build column index map (first match wins per key)
+        col_idx: dict[str, int] = {}
+        for i, h in enumerate(headers_lower):
+            for pattern, key in _COL_PATTERNS:
+                if pattern in h and key not in col_idx:
+                    col_idx[key] = i
+                    break
+
+        if not col_idx:
+            continue
+
+        # Find the row for this ticker
+        for row in rows[1:]:
+            cells = row.find_all(["td", "th"])
+            if ticker_col >= len(cells):
+                continue
+            if cells[ticker_col].get_text(strip=True).upper() != ticker_upper:
+                continue
+
+            result: dict = {}
+            for key, idx in col_idx.items():
+                if idx < len(cells):
+                    val = _clean(cells[idx].get_text(strip=True))
+                    if val:
+                        result[key] = val
+            return result if result else None
 
     return None
 
@@ -122,7 +122,6 @@ async def get_financials(ticker: str) -> dict | None:
     soup = BeautifulSoup(html, "html.parser")
     result: dict = {"years": [], "metrics": {}}
 
-    # Look for any table containing financial metrics
     for table in soup.find_all("table"):
         txt = table.get_text().lower()
         if "выручка" not in txt and "ebitda" not in txt:
@@ -132,7 +131,6 @@ async def get_financials(ticker: str) -> dict | None:
         if len(rows) < 3:
             continue
 
-        # Extract years from header
         header_cells = rows[0].find_all(["th", "td"])
         years = []
         for cell in header_cells[1:]:
