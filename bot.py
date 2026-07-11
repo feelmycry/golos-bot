@@ -11,6 +11,7 @@ from handlers import start, setup, dialog, news_analysis, briefing, admin, stock
 from handlers.game import streak_reminder_task
 from middlewares.block import BlockMiddleware
 from middlewares.subscription import SubscriptionMiddleware
+from middlewares.activity_log import ActivityLogMiddleware
 from services.db import init_db
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
@@ -39,6 +40,7 @@ async def main():
     dp.callback_query.middleware(BlockMiddleware())
     dp.message.middleware(SubscriptionMiddleware())
     dp.callback_query.middleware(SubscriptionMiddleware())
+    dp.callback_query.middleware(ActivityLogMiddleware())
 
     dp.include_router(payment.router)
     dp.include_router(support.router)

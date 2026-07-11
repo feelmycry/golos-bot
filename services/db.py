@@ -220,6 +220,25 @@ async def init_db() -> None:
             )
         """)
         await db.execute("""
+            CREATE TABLE IF NOT EXISTS user_activity (
+                id         INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id    INTEGER NOT NULL,
+                action     TEXT    NOT NULL,
+                detail     TEXT,
+                created_at TEXT    DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+        await db.execute("""
+            CREATE TABLE IF NOT EXISTS voice_messages (
+                id           INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id      INTEGER NOT NULL,
+                session_id   INTEGER,
+                file_id      TEXT    NOT NULL,
+                transcription TEXT,
+                created_at   TEXT    DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+        await db.execute("""
             CREATE TABLE IF NOT EXISTS referrals (
                 id                       INTEGER PRIMARY KEY AUTOINCREMENT,
                 referrer_id              INTEGER NOT NULL,
@@ -1273,3 +1292,88 @@ async def game_save_coop_answer(session_id: int, user_id: int, correct: bool) ->
                 )
             await db.commit()
             return {"both_done": both_done, "session": sess}
+
+
+# ── Activity log ──────────────────────────────────────────────────────────────
+
+async def log_activity(user_id: int, action: str, detail: str | None = None) -> None:
+    try:
+        async with aiosqlite.connect(DB_PATH) as db:
+            await db.execute(
+                "INSERT INTO user_activity (user_id, action, detail) VALUES (?, ?, ?)",
+                (user_id, action, detail)
+            )
+            await db.commit()
+    except Exception:
+        pass
+
+
+async def get_recent_activity(limit: int = 50) -> list[dict]:
+    async with aiosqlite.connect(DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        rows = await (await db.execute(
+            """SELECT a.user_id, a.action, a.detail, a.created_at,
+                      u.username, u.first_name
+               FROM user_activity a
+               LEFT JOIN users u ON u.telegram_id = a.user_id
+               WHERE NOT (a.detail LIKE 'admin:%')
+               ORDER BY a.created_at DESC LIMIT ?""",
+            (limit,)
+        )).fetchall()
+        return [dict(r) for r in rows]
+
+
+async def get_user_activity(user_id: int, limit: int = 30) -> list[dict]:
+    async with aiosqlite.connect(DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        rows = await (await db.execute(
+            """SELECT action, detail, created_at FROM user_activity
+               WHERE user_id = ? ORDER BY created_at DESC LIMIT ?""",
+            (user_id, limit)
+        )).fetchall()
+        return [dict(r) for r in rows]
+
+
+async def get_all_user_ids() -> list[int]:
+    async with aiosqlite.connect(DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        rows = await (await db.execute(
+            "SELECT telegram_id FROM users WHERE is_blocked = 0"
+        )).fetchall()
+        return [r["telegram_id"] for r in rows]
+
+
+# ── Voice messages ─────────────────────────────────────────────────────────────
+
+async def log_voice_message(user_id: int, session_id: int | None, file_id: str, transcription: str) -> None:
+    try:
+        async with aiosqlite.connect(DB_PATH) as db:
+            await db.execute(
+                "INSERT INTO voice_messages (user_id, session_id, file_id, transcription) VALUES (?, ?, ?, ?)",
+                (user_id, session_id, file_id, transcription)
+            )
+            await db.commit()
+    except Exception:
+        pass
+
+
+async def get_voice_messages(user_id: int | None = None, limit: int = 25) -> list[dict]:
+    async with aiosqlite.connect(DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        if user_id:
+            rows = await (await db.execute(
+                """SELECT v.id, v.user_id, v.session_id, v.file_id, v.transcription, v.created_at,
+                          u.username, u.first_name
+                   FROM voice_messages v LEFT JOIN users u ON u.telegram_id = v.user_id
+                   WHERE v.user_id = ? ORDER BY v.created_at DESC LIMIT ?""",
+                (user_id, limit)
+            )).fetchall()
+        else:
+            rows = await (await db.execute(
+                """SELECT v.id, v.user_id, v.session_id, v.file_id, v.transcription, v.created_at,
+                          u.username, u.first_name
+                   FROM voice_messages v LEFT JOIN users u ON u.telegram_id = v.user_id
+                   ORDER BY v.created_at DESC LIMIT ?""",
+                (limit,)
+            )).fetchall()
+        return [dict(r) for r in rows]

@@ -9,7 +9,7 @@ from aiogram.utils.keyboard import InlineKeyboardBuilder
 from states.training import Training
 from services.whisper import transcribe_voice
 from services.claude import continue_dialog, get_feedback, get_hint, get_mid_feedback, get_session_summary
-from services.db import update_messages, complete_session, get_user_stats
+from services.db import update_messages, complete_session, get_user_stats, log_voice_message
 from services.subscription import is_subscribed
 from config import ADMIN_IDS
 
@@ -94,6 +94,7 @@ async def handle_voice(message: Message, state: FSMContext):
         )
         return
 
+    await log_voice_message(message.from_user.id, session_id, message.voice.file_id, transcription)
     messages.append({"role": "employee", "content": transcription})
 
     await status.edit_text("🤔 Клиент думает...")
