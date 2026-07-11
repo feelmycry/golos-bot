@@ -7,7 +7,7 @@ from aiogram.utils.keyboard import InlineKeyboardBuilder
 from config import ADMIN_IDS, PAYMENTS_TOKEN
 from services.subscription import (
     grant_subscription, PLANS, grant_product_access, PRODUCT_PLANS,
-    has_referral_discount, use_referral_discount,
+    has_any_discount, use_any_discount,
 )
 
 router = Router()
@@ -70,7 +70,7 @@ def _disc(amount: int) -> int:
 
 
 async def _show_pay_menu(message, user_id: int, edit: bool = False) -> None:
-    has_disc = await has_referral_discount(user_id)
+    has_disc = await has_any_discount(user_id)
     b = InlineKeyboardBuilder()
     b.button(text="🎯 Тренировка — 6 мес (1 390 ₽)", callback_data="pay:half_year")
     b.button(text="🏆 Тренировка — 12 мес (1 790 ₽)", callback_data="pay:year")
@@ -131,7 +131,7 @@ async def show_referral(callback: CallbackQuery):
 
 @router.callback_query(F.data == "pay:discount_menu")
 async def show_discount_menu(callback: CallbackQuery):
-    if not await has_referral_discount(callback.from_user.id):
+    if not await has_any_discount(callback.from_user.id):
         await callback.answer("Скидка уже использована или недоступна.", show_alert=True)
         return
     await callback.answer()
@@ -158,7 +158,7 @@ async def handle_pay_discounted(callback: CallbackQuery):
     if plan not in _INVOICES:
         await callback.answer("Неизвестный тариф", show_alert=True)
         return
-    if not await has_referral_discount(callback.from_user.id):
+    if not await has_any_discount(callback.from_user.id):
         await callback.answer("Скидка уже использована.", show_alert=True)
         return
     if not PAYMENTS_TOKEN:
@@ -183,7 +183,7 @@ async def handle_pay_product_discounted(callback: CallbackQuery):
     if plan not in _PRODUCT_INVOICES:
         await callback.answer("Неизвестный тариф", show_alert=True)
         return
-    if not await has_referral_discount(callback.from_user.id):
+    if not await has_any_discount(callback.from_user.id):
         await callback.answer("Скидка уже использована.", show_alert=True)
         return
     if not PAYMENTS_TOKEN:
@@ -391,7 +391,7 @@ async def process_successful_payment(message: Message):
     token = create_token(message.from_user.id)
 
     if is_discounted:
-        await use_referral_discount(message.from_user.id, f"{base_kind}_{plan}")
+        await use_any_discount(message.from_user.id, f"{base_kind}_{plan}")
 
     if base_kind == "prod":
         product_map = {

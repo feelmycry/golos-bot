@@ -21,6 +21,7 @@ from services.subscription import (
     grant_product_access, PRODUCT_PLANS,
     get_all_subscriptions, get_all_product_access,
     revoke_subscription, revoke_product_access,
+    get_all_referrals,
 )
 
 log = logging.getLogger(__name__)
@@ -82,6 +83,7 @@ def _main_kb():
     b.button(text="🗂 Сессии",          callback_data="admin:sessions")
     b.button(text="👥 Пользователи",    callback_data="admin:users")
     b.button(text="📋 Подписки",        callback_data="admin:subs")
+    b.button(text="🤝 Рефералы",        callback_data="admin:referrals")
     b.button(text="🎁 Выдать доступ",   callback_data="admin:grant")
     b.button(text="📥 Выгрузить CSV",   callback_data="admin:export_csv")
     b.adjust(2)
@@ -440,6 +442,44 @@ async def admin_msg_send(message: Message, state: FSMContext):
 
 
 # ── Subscriptions ─────────────────────────────────────────────────────────────
+
+@router.callback_query(F.data == "admin:referrals")
+async def admin_referrals(callback: CallbackQuery):
+    if callback.from_user.id not in ADMIN_IDS:
+        await callback.answer()
+        return
+    await callback.answer()
+    refs = await get_all_referrals()
+
+    lines = ["🤝 <b>Реферальная программа</b>\n"]
+    if not refs:
+        lines.append("<i>Рефералов пока нет</i>")
+    else:
+        lines.append(f"Всего: <b>{len(refs)}</b>\n")
+        for r in refs:
+            ref_name = html.escape(r["referrer_name"] or str(r["referrer_id"]))
+            ref_un = f"@{html.escape(r['referrer_username'])}" if r["referrer_username"] else f"<code>{r['referrer_id']}</code>"
+            inv_name = html.escape(r["referred_name"] or str(r["referred_id"]))
+            inv_un = f"@{html.escape(r['referred_username'])}" if r["referred_username"] else f"<code>{r['referred_id']}</code>"
+            date = (r["created_at"] or "")[:10]
+
+            ref_disc = "✅ использована" if r["referrer_discount_used"] else "🎁 доступна"
+            inv_disc = "✅ использована" if r["discount_used"] else "🎁 доступна"
+
+            lines.append(
+                f"📅 {date}\n"
+                f"  Реферер: {ref_name} ({ref_un}) — скидка реферера: {ref_disc}\n"
+                f"  Приглашён: {inv_name} ({inv_un}) — скидка друга: {inv_disc}"
+            )
+            lines.append("")
+
+    b = InlineKeyboardBuilder()
+    b.button(text="← Главное меню", callback_data="admin:main")
+    text = "\n".join(lines)
+    if len(text) > 4000:
+        text = text[:3990] + "…"
+    await callback.message.edit_text(text, parse_mode="HTML", reply_markup=b.as_markup())
+
 
 @router.callback_query(F.data == "admin:subs")
 async def admin_subs_list(callback: CallbackQuery):

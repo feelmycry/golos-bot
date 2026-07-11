@@ -67,6 +67,17 @@ async def cmd_start(message: Message, state: FSMContext, command: CommandObject 
                     "любого одного модуля. Используйте её в разделе <b>💳 Оплатить бота</b>.",
                     parse_mode="HTML",
                 )
+                try:
+                    friend_name = message.from_user.first_name or "Ваш друг"
+                    await message.bot.send_message(
+                        referrer_id,
+                        f"🎉 <b>{friend_name} зарегистрировался по вашей ссылке!</b>\n\n"
+                        f"Вы получили скидку <b>10%</b> на оплату любого одного модуля. "
+                        f"Используйте её в разделе <b>💳 Оплатить бота</b>.",
+                        parse_mode="HTML",
+                    )
+                except Exception:
+                    pass
         # fall through to normal start menu
 
     elif args and args.startswith("duel_"):

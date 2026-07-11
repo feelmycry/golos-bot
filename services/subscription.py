@@ -72,6 +72,22 @@ async def grant_product_access(user_id: int, product: str, plan: str, payment_id
     return paid_until
 
 
+async def get_all_referrals() -> list[dict]:
+    async with aiosqlite.connect(DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        rows = await (await db.execute(
+            """SELECT r.referrer_id, r.referred_id, r.discount_used, r.discount_product,
+                      r.referrer_discount_used, r.referrer_discount_product, r.created_at,
+                      u1.username AS referrer_username, u1.first_name AS referrer_name,
+                      u2.username AS referred_username, u2.first_name AS referred_name
+               FROM referrals r
+               LEFT JOIN users u1 ON u1.telegram_id = r.referrer_id
+               LEFT JOIN users u2 ON u2.telegram_id = r.referred_id
+               ORDER BY r.created_at DESC"""
+        )).fetchall()
+        return [dict(r) for r in rows]
+
+
 async def get_all_subscriptions() -> list[dict]:
     async with aiosqlite.connect(DB_PATH) as db:
         db.row_factory = aiosqlite.Row
@@ -145,6 +161,38 @@ async def use_referral_discount(user_id: int, product: str) -> None:
             (product, user_id)
         )
         await db.commit()
+
+
+async def has_referrer_discount(user_id: int) -> bool:
+    """Check if user has an unused discount earned by inviting someone."""
+    async with aiosqlite.connect(DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        row = await (await db.execute(
+            "SELECT id FROM referrals WHERE referrer_id = ? AND referrer_discount_used = 0",
+            (user_id,)
+        )).fetchone()
+        return row is not None
+
+
+async def use_referrer_discount(user_id: int, product: str) -> None:
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.execute(
+            """UPDATE referrals SET referrer_discount_used = 1, referrer_discount_product = ?
+               WHERE referrer_id = ? AND referrer_discount_used = 0""",
+            (product, user_id)
+        )
+        await db.commit()
+
+
+async def has_any_discount(user_id: int) -> bool:
+    return await has_referral_discount(user_id) or await has_referrer_discount(user_id)
+
+
+async def use_any_discount(user_id: int, product: str) -> None:
+    if await has_referral_discount(user_id):
+        await use_referral_discount(user_id, product)
+    else:
+        await use_referrer_discount(user_id, product)
 
 
 async def grant_subscription(user_id: int, plan: str, payment_id: str | None = None) -> date:
