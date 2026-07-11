@@ -23,6 +23,7 @@ def _news_main_kb():
     b.button(text="📊 На ОПИФ", callback_data="news:cat:opif")
     b.button(text="🥇 На ОМС", callback_data="news:cat:oms")
     b.button(text="⚡ На Стратегии", callback_data="news:cat:strategy")
+    b.button(text="🌅 Рыночный брифинг", callback_data="briefing:open")
     b.button(text="◀️ Главное меню", callback_data="back_to_menu")
     b.adjust(1)
     return b.as_markup()

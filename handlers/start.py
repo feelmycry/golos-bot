@@ -33,7 +33,6 @@ def _main_kb(user_id: int = 0, miniapp_token: str = ""):
     b.button(text="❓ Как пользоваться ботом", callback_data="help:guide")
     b.button(text="🎯 Тренировка", callback_data="start_training")
     b.button(text="📰 Анализ новостей", callback_data="news:menu")
-    b.button(text="🌅 Рыночный брифинг", callback_data="briefing:open")
     b.button(text="📈 Анализ акций", callback_data="stock:start")
     b.button(text="📚 Обучение", callback_data="learning:menu")
     b.button(text="🎮 Игра", callback_data="game:open")
