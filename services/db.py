@@ -219,6 +219,16 @@ async def init_db() -> None:
                 created_at         TEXT    DEFAULT CURRENT_TIMESTAMP
             )
         """)
+        await db.execute("""
+            CREATE TABLE IF NOT EXISTS referrals (
+                id              INTEGER PRIMARY KEY AUTOINCREMENT,
+                referrer_id     INTEGER NOT NULL,
+                referred_id     INTEGER NOT NULL UNIQUE,
+                discount_used   INTEGER DEFAULT 0,
+                discount_product TEXT,
+                created_at      TEXT    DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
         await db.commit()
 
 

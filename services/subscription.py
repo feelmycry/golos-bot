@@ -10,7 +10,7 @@ PLANS = {
 PRODUCT_PLANS = {
     "learning_basic":  {"days": 36500, "price": 200,  "label": "Базовый уровень (навсегда)"},
     "learning_medium": {"days": 36500, "price": 200,  "label": "Средний уровень (навсегда)"},
-    "learning_pro":    {"days": 36500, "price": 200,  "label": "Профессиональный уровень (навсегда)"},
+    "learning_pro":    {"days": 36500, "price": 300,  "label": "Профессиональный уровень (навсегда)"},
     "stocks_monthly":  {"days": 30,    "price": 1400, "label": "Анализ акций — 1 месяц"},
 }
 
@@ -101,6 +101,48 @@ async def revoke_product_access(user_id: int, product: str) -> None:
         await db.execute(
             "DELETE FROM product_access WHERE user_id = ? AND product = ?",
             (user_id, product)
+        )
+        await db.commit()
+
+
+async def create_referral(referrer_id: int, referred_id: int) -> bool:
+    """Record that referred_id was invited by referrer_id. Returns True if newly created."""
+    if referrer_id == referred_id:
+        return False
+    async with aiosqlite.connect(DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        referrer = await (await db.execute(
+            "SELECT telegram_id FROM users WHERE telegram_id = ?", (referrer_id,)
+        )).fetchone()
+        if not referrer:
+            return False
+        existing = await (await db.execute(
+            "SELECT id FROM referrals WHERE referred_id = ?", (referred_id,)
+        )).fetchone()
+        if existing:
+            return False
+        await db.execute(
+            "INSERT OR IGNORE INTO referrals (referrer_id, referred_id) VALUES (?, ?)",
+            (referrer_id, referred_id)
+        )
+        await db.commit()
+        return True
+
+
+async def has_referral_discount(user_id: int) -> bool:
+    async with aiosqlite.connect(DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        row = await (await db.execute(
+            "SELECT id FROM referrals WHERE referred_id = ? AND discount_used = 0", (user_id,)
+        )).fetchone()
+        return row is not None
+
+
+async def use_referral_discount(user_id: int, product: str) -> None:
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.execute(
+            "UPDATE referrals SET discount_used = 1, discount_product = ? WHERE referred_id = ? AND discount_used = 0",
+            (product, user_id)
         )
         await db.commit()
 

@@ -7,6 +7,7 @@ from aiogram.utils.keyboard import InlineKeyboardBuilder
 from config import MINIAPP_URL, ADMIN_IDS
 from services.db import upsert_user, get_user_stats, get_user_session_detail, game_link_mentor
 from services.miniapp_auth import create_token
+from services.subscription import create_referral
 
 router = Router()
 
@@ -29,12 +30,14 @@ _STAGE_LABELS = {
 
 def _main_kb(user_id: int = 0, miniapp_token: str = ""):
     b = InlineKeyboardBuilder()
+    b.button(text="❓ Как пользоваться ботом", callback_data="help:guide")
     b.button(text="🎯 Тренировка", callback_data="start_training")
     b.button(text="📰 Анализ новостей", callback_data="news:menu")
     b.button(text="🌅 Рыночный брифинг", callback_data="briefing:open")
     b.button(text="📈 Анализ акций", callback_data="stock:start")
     b.button(text="📚 Обучение", callback_data="learning:menu")
     b.button(text="🎮 Игра", callback_data="game:open")
+    b.button(text="💳 Оплатить бота", callback_data="pay:menu")
     b.button(text="🆘 Поддержка", callback_data="support:menu")
     if MINIAPP_URL and user_id in ADMIN_IDS:
         url = f"{MINIAPP_URL}?t={miniapp_token}" if miniapp_token else MINIAPP_URL
@@ -50,7 +53,23 @@ async def cmd_start(message: Message, state: FSMContext, command: CommandObject 
 
     args = command.args if command else None
 
-    if args and args.startswith("duel_"):
+    if args and args.startswith("ref_"):
+        try:
+            referrer_id = int(args[4:])
+        except ValueError:
+            referrer_id = None
+        if referrer_id:
+            created = await create_referral(referrer_id, message.from_user.id)
+            if created:
+                await message.answer(
+                    "🎁 <b>Вам доступна скидка 10%!</b>\n\n"
+                    "Друг пригласил вас в бот — вы получили скидку 10% на оплату "
+                    "любого одного модуля. Используйте её в разделе <b>💳 Оплатить бота</b>.",
+                    parse_mode="HTML",
+                )
+        # fall through to normal start menu
+
+    elif args and args.startswith("duel_"):
         try:
             duel_id = int(args[5:])
         except ValueError:
@@ -192,6 +211,53 @@ async def check_subscription(callback: CallbackQuery, state: FSMContext):
         reply_markup=_main_kb(callback.from_user.id, token or ""),
     )
     await callback.answer("✅ Добро пожаловать!")
+
+
+@router.callback_query(F.data == "help:guide")
+async def show_help_guide(callback: CallbackQuery):
+    await callback.answer()
+    text = (
+        "❓ <b>Как пользоваться ботом</b>\n\n"
+
+        "🎯 <b>Тренировка</b>\n"
+        "Симулятор диалога с клиентом. Выберите тип операции, режим, продукт и уровень сложности — "
+        "и отвечайте голосовыми сообщениями. Бот распознаёт речь, анализирует ответ "
+        "и реагирует как настоящий клиент. В конце — оценка и обратная связь тренера.\n\n"
+
+        "📰 <b>Анализ новостей</b>\n"
+        "Загружает актуальные финансовые новости и с помощью AI объясняет, "
+        "как они влияют на рынок и продукты.\n\n"
+
+        "🌅 <b>Рыночный брифинг</b>\n"
+        "Быстрый обзор текущей ситуации: курсы валют (USD, EUR, CNY), "
+        "индексы (MOEX, S&amp;P 500), нефть, золото.\n\n"
+
+        "📈 <b>Анализ акций</b>\n"
+        "Введите тикер акции — бот покажет мультипликаторы, дивиденды, "
+        "историю финансов и AI-анализ компании. Требует подписки.\n\n"
+
+        "📚 <b>Обучение</b>\n"
+        "Курс по инвестициям: три уровня сложности.\n"
+        "• <b>Базовый</b> — основы инвестиций, продукты, терминология\n"
+        "• <b>Средний</b> — фундаментальный анализ, мультипликаторы, отчётность\n"
+        "• <b>Профессиональный</b> — DCF, деривативы, M&amp;A, управление рисками\n"
+        "Каждый урок заканчивается тестом и начисляет XP.\n\n"
+
+        "🎮 <b>Игра</b>\n"
+        "Обучающая RPG-игра: выполняйте задания, собирайте пассивный доход, "
+        "участвуйте в дуэлях и командных квестах, занимайте места в лиге.\n\n"
+
+        "💳 <b>Оплатить бота</b>\n"
+        "Управляйте доступом: оплатите тренировки, уровни обучения или анализ акций. "
+        "Здесь же — реферальная программа: приведи друга и получите скидку 10%.\n\n"
+
+        "🆘 <b>Поддержка</b>\n"
+        "Напишите нам, если что-то не работает или есть вопросы."
+    )
+    b = InlineKeyboardBuilder()
+    b.button(text="◀️ Главное меню", callback_data="back_to_menu")
+    b.adjust(1)
+    await callback.message.edit_text(text, parse_mode="HTML", reply_markup=b.as_markup())
 
 
 @router.callback_query(F.data == "learning:stub")
