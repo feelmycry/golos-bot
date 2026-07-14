@@ -8,8 +8,10 @@ from aiogram.utils.keyboard import InlineKeyboardBuilder
 from states.training import Training
 from services.client_gen import generate_client
 from services.claude import get_opening_message
-from services.db import upsert_user, create_session, update_messages
+from services.db import upsert_user, create_session, update_messages, get_user_stats
 from services.photos import fetch_photos
+from services.subscription import is_subscribed
+from config import ADMIN_IDS
 from prompts.templates import build_prior_stages_context, STAGE_NAMES, PRODUCT_INFO, OBJECTIONS
 
 router = Router()
@@ -187,6 +189,19 @@ async def back_to_difficulty(callback: CallbackQuery, state: FSMContext):
 
 @router.callback_query(F.data == "start_training")
 async def start_training(callback: CallbackQuery, state: FSMContext):
+    user_id = callback.from_user.id
+    if user_id not in ADMIN_IDS:
+        stats = await get_user_stats(user_id)
+        if stats["total"] > 0 and not await is_subscribed(user_id):
+            from handlers.payment import show_paywall
+            await callback.answer()
+            await callback.message.edit_text(
+                "🔒 <b>Пробная тренировка уже была использована</b>\n\n"
+                "Вы уже провели бесплатную тренировку. Для продолжения оформите подписку:",
+                parse_mode="HTML",
+            )
+            await show_paywall(callback.message)
+            return
     await state.clear()
     await callback.message.edit_text("Выберите тип клиента:", reply_markup=_scenario_kb())
     await state.set_state(Training.choosing_scenario)
@@ -399,7 +414,7 @@ async def choose_difficulty(callback: CallbackQuery, state: FSMContext):
 
     await callback.message.answer(
         f"🗣 <b>Клиент говорит:</b>\n\n<i>«{opening}»</i>\n\n"
-        f"🎙 Запишите голосовое сообщение с вашим ответом:",
+        f"🎙 Ваш ответ (голос или текст):",
         parse_mode="HTML",
         reply_markup=_dialog_kb(),
     )
@@ -423,7 +438,7 @@ async def choose_objection(callback: CallbackQuery, state: FSMContext):
     await callback.message.answer(
         f"💬 <b>Возражение клиента:</b>\n<i>«{objection_text}»</i>\n\n"
         f"Вам предстоит его отработать. Клиент сейчас произнесёт это возражение.\n"
-        f"🎙 Ответьте голосовым сообщением:",
+        f"🎙 Ответьте голосом или текстом:",
         parse_mode="HTML",
     )
 
@@ -439,7 +454,7 @@ async def choose_objection(callback: CallbackQuery, state: FSMContext):
 
     await callback.message.answer(
         f"🗣 <b>Клиент говорит:</b>\n\n<i>«{opening}»</i>\n\n"
-        f"🎙 Запишите голосовое сообщение с вашим ответом:",
+        f"🎙 Ваш ответ (голос или текст):",
         parse_mode="HTML",
         reply_markup=_dialog_kb(),
     )

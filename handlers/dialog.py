@@ -39,7 +39,7 @@ def _after_end_kb():
 async def _send_client_reply(message: Message, client_reply: str, msg_count: int, photo_urls: list) -> None:
     """Send client reply, adding a photo on every 2nd exchange."""
     emoji = random.choice(_REACTION_EMOJIS)
-    text = f"{emoji} <b>Клиент отвечает:</b>\n\n<i>«{client_reply}»</i>\n\n🎙 Ваш следующий ответ:"
+    text = f"{emoji} <b>Клиент отвечает:</b>\n\n<i>«{client_reply}»</i>\n\n🎙 Ваш следующий ответ (голос или текст):"
 
     # Show photo every 2nd client response
     if msg_count % 2 == 0 and photo_urls:
@@ -130,15 +130,58 @@ async def handle_voice(message: Message, state: FSMContext):
             return
 
 
-@router.message(Training.in_dialog, ~F.voice)
-async def handle_non_voice(message: Message):
-    if message.text and message.text.startswith("/"):
+@router.message(Training.in_dialog, F.text)
+async def handle_text(message: Message, state: FSMContext):
+    if message.text.startswith("/"):
         return
+
+    data = await state.get_data()
+    profile = data["client_profile"]
+    messages: list = data["messages"]
+    stage: str = data["target_stage"]
+    product: str | None = data.get("product")
+    session_id: int = data["session_id"]
+    msg_count: int = data.get("msg_count", 0) + 1
+    photo_urls: list = data.get("photo_urls", [])
+    difficulty: str = data.get("difficulty", "medium")
+    mode: str = data.get("mode", "full")
+    hidden_product: str | None = data.get("hidden_product")
+    objection_text: str | None = data.get("objection_text")
+
+    user_text = message.text.strip()
+    if not user_text:
+        return
+
+    messages.append({"role": "employee", "content": user_text})
+
+    status = await message.answer("🤔 Клиент думает...")
+
+    try:
+        client_reply = await continue_dialog(profile, stage, messages, product, difficulty, mode, hidden_product, objection_text)
+    except Exception as e:
+        await status.edit_text(f"❌ Ошибка AI: {e}")
+        return
+
+    messages.append({"role": "client", "content": client_reply})
+
+    await state.update_data(messages=messages, msg_count=msg_count)
+    await update_messages(session_id, messages)
+
+    await status.delete()
+
     await message.answer(
-        "🎙 Пожалуйста, отправьте <b>голосовое сообщение</b> с вашим ответом.",
+        f"📝 <b>Вы написали:</b>\n<i>{user_text}</i>",
         parse_mode="HTML",
-        reply_markup=_dialog_kb(),
     )
+
+    await _send_client_reply(message, client_reply, msg_count, photo_urls)
+
+    if msg_count >= 1 and message.from_user.id not in ADMIN_IDS:
+        if not await is_subscribed(message.from_user.id):
+            await state.clear()
+            from handlers.payment import show_paywall
+            await show_paywall(message)
+            return
 
 
 @router.callback_query(Training.in_dialog, F.data == "dialog:hint")
@@ -179,7 +222,7 @@ async def handle_mid_feedback(callback: CallbackQuery, state: FSMContext):
 
     employee_turns = [m for m in messages if m["role"] == "employee"]
     if not employee_turns:
-        await callback.answer("Сначала отправьте хотя бы один голосовой ответ!", show_alert=True)
+        await callback.answer("Сначала отправьте хотя бы один ответ!", show_alert=True)
         return
 
     await callback.answer("Анализирую...")
