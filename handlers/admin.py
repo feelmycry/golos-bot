@@ -443,18 +443,6 @@ async def admin_msg_cancel(callback: CallbackQuery, state: FSMContext):
     await admin_user_detail(callback)
 
 
-@router.message(AdminMsg.waiting_text)
-async def admin_msg_send(message: Message, state: FSMContext):
-    if message.from_user.id not in ADMIN_IDS:
-        return
-    data = await state.get_data()
-    target_user_id = data.get("target_user_id")
-    await state.clear()
-    try:
-        await message.bot.send_message(target_user_id, message.text)
-        await message.answer(f"✅ Сообщение отправлено <code>{target_user_id}</code>.", parse_mode="HTML")
-    except Exception as e:
-        await message.answer(f"❌ Не удалось отправить: <code>{e}</code>", parse_mode="HTML")
 
 
 # ── Subscriptions ─────────────────────────────────────────────────────────────
@@ -592,7 +580,7 @@ _ACTION_LABELS = {
 @router.callback_query(F.data == "admin:activity")
 async def admin_activity(callback: CallbackQuery):
     await callback.answer()
-    rows = await get_recent_activity(50)
+    rows = await get_recent_activity(100)
     if not rows:
         b = InlineKeyboardBuilder()
         b.button(text="← Главное меню", callback_data="admin:main")
@@ -611,10 +599,22 @@ async def admin_activity(callback: CallbackQuery):
     b.button(text="👤 По пользователю", callback_data="admin:activity_user")
     b.button(text="← Главное меню", callback_data="admin:main")
     b.adjust(1)
-    text = "\n".join(lines)
-    if len(text) > 3800:
-        text = text[:3790] + "\n…"
-    await callback.message.edit_text(text, parse_mode="HTML", reply_markup=b.as_markup())
+    full_text = "\n".join(lines)
+    # Split into chunks of ≤3800 chars if needed
+    chunks = []
+    while len(full_text) > 3800:
+        split_at = full_text.rfind("\n", 0, 3800)
+        if split_at == -1:
+            split_at = 3800
+        chunks.append(full_text[:split_at])
+        full_text = full_text[split_at:].lstrip("\n")
+    chunks.append(full_text)
+    for i, chunk in enumerate(chunks):
+        markup = b.as_markup() if i == len(chunks) - 1 else None
+        if i == 0:
+            await callback.message.edit_text(chunk, parse_mode="HTML", reply_markup=markup)
+        else:
+            await callback.message.answer(chunk, parse_mode="HTML", reply_markup=markup)
 
 
 @router.callback_query(F.data == "admin:activity_user")
@@ -825,11 +825,23 @@ async def admin_direct_msg_send(message: Message, state: FSMContext):
 
 @router.message(AdminMsg.waiting_text)
 async def admin_msg_handler(message: Message, state: FSMContext):
+    if message.from_user.id not in ADMIN_IDS:
+        return
     data = await state.get_data()
     action = data.get("admin_action")
-    query = (message.text or "").strip()
     await state.clear()
 
+    # Legacy flow: send message directly to a known user_id (from user detail card)
+    if action is None:
+        target_user_id = data.get("target_user_id")
+        try:
+            await message.bot.send_message(target_user_id, message.text)
+            await message.answer(f"✅ Сообщение отправлено <code>{target_user_id}</code>.", parse_mode="HTML")
+        except Exception as e:
+            await message.answer(f"❌ Не удалось отправить: <code>{html.escape(str(e))}</code>", parse_mode="HTML")
+        return
+
+    query = (message.text or "").strip()
     user_id = None
     user = None
     if query.lstrip("@").isdigit():

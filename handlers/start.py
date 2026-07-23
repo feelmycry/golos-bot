@@ -28,6 +28,28 @@ _STAGE_LABELS = {
 }
 
 
+def _bank_kb():
+    b = InlineKeyboardBuilder()
+    b.button(text="🟢 Сбер", callback_data="bank:sber")
+    b.button(text="🔴 Альфа", callback_data="bank:alpha")
+    b.button(text="🔵 ВТБ", callback_data="bank:vtb")
+    b.button(text="🟡 ГПБ", callback_data="bank:gpb")
+    b.adjust(1)
+    return b.as_markup()
+
+
+def _segment_kb(bank: str):
+    b = InlineKeyboardBuilder()
+    b.button(text="👥 Массовый сегмент", callback_data=f"segment:mass:{bank}")
+    b.button(text="💎 Премиальный сегмент", callback_data=f"segment:premium:{bank}")
+    b.button(text="◀️ Назад", callback_data="role:employee")
+    b.adjust(1)
+    return b.as_markup()
+
+
+_BANK_NAMES = {"sber": "Сбер", "alpha": "Альфа", "vtb": "ВТБ", "gpb": "ГПБ"}
+
+
 def _main_kb(user_id: int = 0, miniapp_token: str = ""):
     b = InlineKeyboardBuilder()
     b.button(text="❓ Как пользоваться ботом", callback_data="help:guide")
@@ -161,19 +183,10 @@ async def cmd_start(message: Message, state: FSMContext, command: CommandObject 
         # fall through to normal start menu
 
     name = message.from_user.first_name or "Коллега"
-    token = create_token(message.from_user.id)
     await message.answer(
-        f"Привет, {name}! 👋\n\n"
-        f"Это тренажёр по продажам инвестиционных продуктов и помощник по анализу новостей.\n\n"
-        f"Помогу отработать навыки продаж по:\n"
-        f"• НСЖ\n"
-        f"• ПДС\n"
-        f"• ОПИФ\n"
-        f"• ОМС\n"
-        f"• Стратегии автоследования\n\n"
-        f"Отвечай <b>голосовыми сообщениями</b> — я распознаю, проанализирую и отвечу как настоящий клиент.",
+        f"Привет, {name}! 👋\n\nВыберите ваш банк:",
         parse_mode="HTML",
-        reply_markup=_main_kb(message.from_user.id, token or ""),
+        reply_markup=_bank_kb(),
     )
 
 
@@ -189,14 +202,69 @@ async def cmd_myid(message: Message):
 
 @router.message(Command("cancel"))
 async def cmd_cancel(message: Message, state: FSMContext):
+    prev = await state.get_data()
+    bank = prev.get("bank")
+    segment = prev.get("segment")
     await state.clear()
+    if bank:
+        await state.update_data(bank=bank, segment=segment)
     token = create_token(message.from_user.id)
     await message.answer("Сессия сброшена. Выберите действие:", reply_markup=_main_kb(message.from_user.id, token or ""))
 
 
+@router.callback_query(F.data == "role:employee")
+async def role_employee(callback: CallbackQuery, state: FSMContext):
+    await callback.answer()
+    await callback.message.edit_text(
+        "🏦 <b>Выберите банк:</b>",
+        parse_mode="HTML",
+        reply_markup=_bank_kb(),
+    )
+
+
+@router.callback_query(F.data.startswith("bank:"))
+async def bank_select(callback: CallbackQuery, state: FSMContext):
+    bank = callback.data[len("bank:"):]
+    if bank not in _BANK_NAMES:
+        await callback.answer()
+        return
+    await callback.answer()
+    bank_name = _BANK_NAMES[bank]
+    await callback.message.edit_text(
+        f"🏦 <b>{bank_name}</b> — выберите сегмент:",
+        parse_mode="HTML",
+        reply_markup=_segment_kb(bank),
+    )
+
+
+@router.callback_query(F.data.startswith("segment:"))
+async def segment_select(callback: CallbackQuery, state: FSMContext):
+    parts = callback.data.split(":")
+    if len(parts) < 3:
+        await callback.answer()
+        return
+    segment = parts[1]
+    bank = parts[2]
+    bank_name = _BANK_NAMES.get(bank, bank)
+    segment_name = "Массовый" if segment == "mass" else "Премиальный"
+    await state.update_data(bank=bank, segment=segment)
+    await callback.answer()
+    token = create_token(callback.from_user.id)
+    await callback.message.edit_text(
+        f"✅ <b>{bank_name} · {segment_name} сегмент</b>\n\nВыберите раздел:",
+        parse_mode="HTML",
+        reply_markup=_main_kb(callback.from_user.id, token or ""),
+    )
+
+
 @router.callback_query(F.data == "back_to_menu")
 async def back_to_menu(callback: CallbackQuery, state: FSMContext):
+    prev = await state.get_data()
+    bank = prev.get("bank")
+    segment = prev.get("segment")
     await state.clear()
+    if bank:
+        await state.update_data(bank=bank, segment=segment)
     name = callback.from_user.first_name or "Коллега"
     token = create_token(callback.from_user.id)
     await callback.message.edit_text(
@@ -283,6 +351,35 @@ _PRODUCT_LABELS = {
     "strategy": "Стратегия",
     "portfolio": "Портфель",
     "identify": "Подбор продукта",
+    # ВТБ Премиум
+    "vtbpp_pkg": "ВТБ Привилегия (удержание)",
+    "vtbpp_opifdu": "ВТБ ОПИФ и ДУ",
+    "vtbpp_isj_sg": "ВТБ ИСЖ Согаз",
+    "vtbpp_isj_rg": "ВТБ ИСЖ РГС",
+    "vtbpp_pds": "ВТБ ПДС",
+    "vtbpp_sov": "ВТБ СОВ",
+    "vtbpp_liq": "ВТБ Фонд ликвидности",
+    "vtbpp_metals": "ВТБ Монеты и слитки",
+    # ВТБ Масс
+    "vtbpm_uk": "ВТБ Продукты УК",
+    "vtbpm_isj": "ВТБ ИСЖ",
+    "vtbpm_nsj": "ВТБ НСЖ",
+    "vtbpm_pds": "ВТБ ПДС",
+    "vtbpm_box": "ВТБ Коробочное страх.",
+    "vtbpm_auto": "ВТБ Автокредит",
+    "vtbpm_dep": "ВТБ Вклады",
+    "vtbpm_dbt": "ВТБ Дебет. карты",
+    # ГПБ Премиум
+    "gpbp_pkg_att": "ГПБ Пакет (привлечение)",
+    "gpbp_pkg_ret": "ГПБ Пакет (удержание)",
+    "gpbp_isj": "ГПБ ИСЖ",
+    "gpbp_nsj": "ГПБ НСЖ",
+    "gpbp_du": "ГПБ ДУ",
+    "gpbp_pds": "ГПБ ПДС",
+    "gpbp_dbond": "ГПБ Дисконт. облигация",
+    "gpbp_zpif": "ГПБ ЗПИФ",
+    "gpbp_mmkt": "ГПБ Денежный рынок",
+    "gpbp_fcard": "ГПБ Зарубежные карты",
 }
 
 _MODE_LABELS = {

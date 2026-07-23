@@ -84,17 +84,47 @@ def _stage_kb():
     return b.as_markup()
 
 
-def _product_kb(back_cb: str = "setup:back:mode"):
+def _product_kb(bank: str | None = None, segment: str | None = None, back_cb: str = "setup:back:mode"):
     b = InlineKeyboardBuilder()
-    b.button(text="🏦 ПДС", callback_data="product:pds")
-    b.button(text="🛡 НСЖ", callback_data="product:nsj")
-    b.button(text="📈 ОПИФ", callback_data="product:opif")
-    b.button(text="🥇 ОМС (металлические счета)", callback_data="product:oms")
-    b.button(text="⚡ Стратегия (автоследование)", callback_data="product:strategy")
-    b.button(text="💼 Портфель (диверсификация)", callback_data="product:portfolio")
+    if bank == "vtb" and segment == "premium":
+        b.button(text="📦 Пакет услуг Привилегия", callback_data="product:vtbpp_pkg")
+        b.button(text="📈 ОПИФ и ДУ (РДУ)", callback_data="product:vtbpp_opifdu")
+        b.button(text="🛡 ИСЖ Согаз", callback_data="product:vtbpp_isj_sg")
+        b.button(text="🛡 ИСЖ Росгосстрах", callback_data="product:vtbpp_isj_rg")
+        b.button(text="🏦 ПДС", callback_data="product:vtbpp_pds")
+        b.button(text="📊 СОВ", callback_data="product:vtbpp_sov")
+        b.button(text="💧 Фонд ликвидности", callback_data="product:vtbpp_liq")
+        b.button(text="🥇 Монеты и слитки", callback_data="product:vtbpp_metals")
+    elif bank == "vtb" and segment == "mass":
+        b.button(text="📈 Продукты УК", callback_data="product:vtbpm_uk")
+        b.button(text="🛡 ИСЖ", callback_data="product:vtbpm_isj")
+        b.button(text="🛡 НСЖ", callback_data="product:vtbpm_nsj")
+        b.button(text="🏦 ПДС", callback_data="product:vtbpm_pds")
+        b.button(text="📦 Коробочное страхование", callback_data="product:vtbpm_box")
+        b.button(text="🚗 Автокредиты", callback_data="product:vtbpm_auto")
+        b.button(text="💰 Вклады", callback_data="product:vtbpm_dep")
+        b.button(text="💳 Дебетовые карты", callback_data="product:vtbpm_dbt")
+    elif bank == "gpb" and segment == "premium":
+        b.button(text="📦 Пакет услуг (Привлечение)", callback_data="product:gpbp_pkg_att")
+        b.button(text="📦 Пакет услуг (Удержание)", callback_data="product:gpbp_pkg_ret")
+        b.button(text="🛡 ИСЖ", callback_data="product:gpbp_isj")
+        b.button(text="🛡 НСЖ", callback_data="product:gpbp_nsj")
+        b.button(text="💼 ДУ", callback_data="product:gpbp_du")
+        b.button(text="🏦 ПДС", callback_data="product:gpbp_pds")
+        b.button(text="📄 Дисконтная облигация", callback_data="product:gpbp_dbond")
+        b.button(text="🏢 ЗПИФ", callback_data="product:gpbp_zpif")
+        b.button(text="💧 Денежный рынок", callback_data="product:gpbp_mmkt")
+        b.button(text="💳 Зарубежные карты", callback_data="product:gpbp_fcard")
+    else:
+        b.button(text="🏦 ПДС", callback_data="product:pds")
+        b.button(text="🛡 НСЖ", callback_data="product:nsj")
+        b.button(text="📈 ОПИФ", callback_data="product:opif")
+        b.button(text="🥇 ОМС (металлические счета)", callback_data="product:oms")
+        b.button(text="⚡ Стратегия (автоследование)", callback_data="product:strategy")
+        b.button(text="💼 Портфель (диверсификация)", callback_data="product:portfolio")
     b.button(text="◀️ Назад", callback_data=back_cb)
     b.button(text="🏠 Меню", callback_data="back_to_menu")
-    b.adjust(1, 1, 1, 1, 1, 1, 2)
+    b.adjust(1)
     return b.as_markup()
 
 
@@ -153,11 +183,13 @@ async def back_to_stage(callback: CallbackQuery, state: FSMContext):
 async def back_to_product(callback: CallbackQuery, state: FSMContext):
     data = await state.get_data()
     mode = data.get("mode", "full")
+    bank = data.get("bank")
+    segment = data.get("segment")
     back_cb = "setup:back:stage" if mode == "stage" else "setup:back:mode"
     await state.set_state(Training.choosing_product)
     await callback.message.edit_text(
         "Какой продукт будете предлагать?",
-        reply_markup=_product_kb(back_cb),
+        reply_markup=_product_kb(bank, segment, back_cb),
     )
     await callback.answer()
 
@@ -202,7 +234,12 @@ async def start_training(callback: CallbackQuery, state: FSMContext):
             )
             await show_paywall(callback.message)
             return
+    prev = await state.get_data()
+    bank = prev.get("bank")
+    segment = prev.get("segment")
     await state.clear()
+    if bank:
+        await state.update_data(bank=bank, segment=segment)
     await callback.message.edit_text("Выберите тип клиента:", reply_markup=_scenario_kb())
     await state.set_state(Training.choosing_scenario)
     await callback.answer()
@@ -227,11 +264,15 @@ async def choose_mode(callback: CallbackQuery, state: FSMContext):
     mode = callback.data.split(":")[1]
     await state.update_data(mode=mode)
 
+    data = await state.get_data()
+    bank = data.get("bank")
+    segment = data.get("segment")
+
     if mode == "full":
         await state.update_data(target_stage="full")
         await callback.message.edit_text(
             "Полная встреча\n\nКакой продукт планируете предложить клиенту?",
-            reply_markup=_product_kb("setup:back:mode"),
+            reply_markup=_product_kb(bank, segment, "setup:back:mode"),
         )
         await state.set_state(Training.choosing_product)
     elif mode == "identify":
@@ -250,7 +291,7 @@ async def choose_mode(callback: CallbackQuery, state: FSMContext):
         await callback.message.edit_text(
             "💬 <b>Отработка возражения</b>\n\nКакой продукт будете предлагать?",
             parse_mode="HTML",
-            reply_markup=_product_kb("setup:back:mode"),
+            reply_markup=_product_kb(bank, segment, "setup:back:mode"),
         )
         await state.set_state(Training.choosing_product)
     else:
@@ -275,10 +316,13 @@ async def choose_stage(callback: CallbackQuery, state: FSMContext):
             "objections": "Отработка возражений",
             "closing": "Закрытие сделки",
         }
+        stg_data = await state.get_data()
+        stg_bank = stg_data.get("bank")
+        stg_segment = stg_data.get("segment")
         await callback.message.edit_text(
             f"Этап: <b>{stage_labels.get(stage, stage)}</b>\n\nКакой продукт будете предлагать?",
             parse_mode="HTML",
-            reply_markup=_product_kb("setup:back:stage"),
+            reply_markup=_product_kb(stg_bank, stg_segment, "setup:back:stage"),
         )
         await state.set_state(Training.choosing_product)
     await callback.answer()
@@ -317,7 +361,9 @@ async def choose_difficulty(callback: CallbackQuery, state: FSMContext):
     # In identify mode: randomly assign a hidden product the client's situation maps to
     hidden_product = None
     if mode == "identify":
-        hidden_product = random.choice(list(PRODUCT_INFO.keys()))
+        from prompts.templates import IDENTIFY_SITUATIONS
+        identify_pool = list(IDENTIFY_SITUATIONS.keys())
+        hidden_product = random.choice(identify_pool)
         await state.update_data(hidden_product=hidden_product)
 
     profile = generate_client(cohort, data["scenario"])
